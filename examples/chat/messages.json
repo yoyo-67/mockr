@@ -1,0 +1,8 @@
+[
+  { "id": 1, "room_id": 1, "author": "alice", "text": "Hey everyone!", "timestamp": "2026-03-14T09:00:00Z" },
+  { "id": 2, "room_id": 1, "author": "bob", "text": "Morning!", "timestamp": "2026-03-14T09:01:00Z" },
+  { "id": 3, "room_id": 2, "author": "bob", "text": "Deployed v2.1 to staging", "timestamp": "2026-03-14T10:30:00Z" },
+  { "id": 4, "room_id": 2, "author": "charlie", "text": "Running tests now", "timestamp": "2026-03-14T10:32:00Z" },
+  { "id": 5, "room_id": 3, "author": "alice", "text": "Can you review my PR?", "timestamp": "2026-03-14T11:00:00Z" },
+  { "id": 6, "room_id": 3, "author": "bob", "text": "Sure, looking at it now", "timestamp": "2026-03-14T11:05:00Z" }
+]

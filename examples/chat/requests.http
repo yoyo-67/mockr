@@ -1,0 +1,188 @@
+### 
+
+# Chat API — fixtures, error injection, URL params, search, scenarios
+# # This example shows:
+# - Data loaded from JSON files (rooms.json, messages.json)
+# - URL parameters (/api/rooms/:roomId/messages)
+# - Cross-endpoint joins (messages enriched with room names)
+# - Full-text search across endpoints
+# - Aggregate stats endpoint
+# - Error injection (5% random 500s — retry if you get one)
+# - Custom middleware (x-request-id header on every response)
+# - Scenarios: "busy" (20 extra messages) and "empty" (no messages)
+# # Start the server: npx tsx examples/chat/server.ts
+# Note: ~5% of requests will randomly return 500 (error injection).
+# Check response headers for x-request-id on every response.
+
+
+### List all rooms
+
+# Returns 3 rooms: "general", "engineering", "alice-bob-dm".
+
+GET http://localhost:3004/api/rooms HTTP/1.1
+
+
+### List only public rooms
+
+# Filters out private rooms. Returns "general" and "engineering".
+
+GET http://localhost:3004/api/rooms?private=false HTTP/1.1
+
+
+### List private rooms
+
+# Returns just "alice-bob-dm".
+
+GET http://localhost:3004/api/rooms?private=true HTTP/1.1
+
+
+### Get messages in #general (room 1)
+
+# Returns 2 messages from Alice and Bob, sorted by timestamp.
+
+GET http://localhost:3004/api/rooms/1/messages HTTP/1.1
+
+
+### Get messages in #engineering (room 2)
+
+# Returns 2 messages about deployment and testing.
+
+GET http://localhost:3004/api/rooms/2/messages HTTP/1.1
+
+
+### Get messages in a DM (room 3)
+
+# Returns the private conversation between Alice and Bob.
+
+GET http://localhost:3004/api/rooms/3/messages HTTP/1.1
+
+
+### Get messages for a room that doesn't exist
+
+# Returns 404 — room 99 doesn't exist.
+
+GET http://localhost:3004/api/rooms/99/messages HTTP/1.1
+
+
+### Send a message to #general
+
+# Creates a new message in room 1. Returns 201 with the message
+# including its auto-generated id and current timestamp.
+
+POST http://localhost:3004/api/rooms/1/messages HTTP/1.1
+Content-Type: application/json
+
+{
+  "author": "charlie",
+  "text": "Just joined the channel!"
+}
+
+
+### Send another message
+
+POST http://localhost:3004/api/rooms/2/messages HTTP/1.1
+Content-Type: application/json
+
+{
+  "author": "alice",
+  "text": "Tests are green, merging now"
+}
+
+
+### Verify — check #general messages again
+
+# Should now have 3 messages (original 2 + Charlie's new one).
+
+GET http://localhost:3004/api/rooms/1/messages HTTP/1.1
+
+
+### Search messages for "deploy"
+
+# Searches all rooms. Returns Bob's message from #engineering
+# enriched with the room name.
+
+GET http://localhost:3004/api/search?q=deploy HTTP/1.1
+
+
+### Search for "PR"
+
+# Finds Alice's DM to Bob asking for a PR review.
+
+GET http://localhost:3004/api/search?q=PR HTTP/1.1
+
+
+### Search without a query
+
+# Returns 400 — the ?q= parameter is required.
+
+GET http://localhost:3004/api/search HTTP/1.1
+
+
+### Get aggregate stats
+
+# Total rooms, total messages, and message count per room.
+
+GET http://localhost:3004/api/stats HTTP/1.1
+
+
+### --- SCENARIOS ---
+
+
+### Switch to "busy" scenario
+
+# Adds 20 extra messages to #general. Good for testing pagination UI.
+
+POST http://localhost:3004/__mockr/scenario HTTP/1.1
+Content-Type: application/json
+
+{
+  "name": "busy"
+}
+
+
+### Check stats after "busy"
+
+# total_messages should jump to 26+ (6 original + 20 busy).
+
+GET http://localhost:3004/api/stats HTTP/1.1
+
+
+### Check #general messages after "busy"
+
+# Should have 22+ messages now.
+
+GET http://localhost:3004/api/rooms/1/messages HTTP/1.1
+
+
+### Switch to "empty" scenario
+
+# Clears all messages but keeps the rooms.
+
+POST http://localhost:3004/__mockr/scenario HTTP/1.1
+Content-Type: application/json
+
+{
+  "name": "empty"
+}
+
+
+### Verify empty — stats should show 0 messages
+
+GET http://localhost:3004/api/stats HTTP/1.1
+
+
+### Reset to defaults
+
+# Restores original data from the JSON files.
+
+POST http://localhost:3004/__mockr/scenario HTTP/1.1
+Content-Type: application/json
+
+{
+  "name": ""
+}
+
+
+### Confirm reset — back to 6 messages
+
+GET http://localhost:30e4/api/stats HTTP/1.1

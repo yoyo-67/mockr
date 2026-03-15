@@ -1,0 +1,48 @@
+{
+  "name": "@yoyo-org/mockr",
+  "version": "0.1.0",
+  "description": "Endpoints are named data holders. Define a URL, attach data, and get a mock API server.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build && npm test",
+    "test": "vitest run && vitest run --config vitest.typecheck.config.ts",
+    "test:watch": "vitest",
+    "test:types": "vitest run --config vitest.typecheck.config.ts",
+    "test:perf": "PERF=1 vitest run tests/perf-*.test.ts",
+    "release:patch": "npm version patch && npm publish --access public",
+    "release:minor": "npm version minor && npm publish --access public",
+    "release:major": "npm version major && npm publish --access public"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "zod": "^4.3.6"
+  },
+  "peerDependencies": {
+    "zod": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "zod": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "path-to-regexp": "^8.2.0",
+    "@yoyo-org/tui-kit": "^0.1.0"
+  }
+}

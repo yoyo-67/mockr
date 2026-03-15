@@ -1,0 +1,8 @@
+[
+  { "id": 1, "name": "Mechanical Keyboard", "price": 75, "category": "electronics", "stock": 24 },
+  { "id": 2, "name": "USB-C Hub", "price": 35, "category": "electronics", "stock": 50 },
+  { "id": 3, "name": "Notebook A5", "price": 8, "category": "office", "stock": 200 },
+  { "id": 4, "name": "Standing Desk", "price": 450, "category": "furniture", "stock": 5 },
+  { "id": 5, "name": "Monitor Arm", "price": 120, "category": "furniture", "stock": 15 },
+  { "id": 6, "name": "Pen Set", "price": 12, "category": "office", "stock": 80 }
+]

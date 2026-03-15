@@ -1,0 +1,5 @@
+[
+  { "id": 1, "name": "general", "created_by": "alice", "is_private": false },
+  { "id": 2, "name": "engineering", "created_by": "bob", "is_private": false },
+  { "id": 3, "name": "alice-bob-dm", "created_by": "alice", "is_private": true }
+]

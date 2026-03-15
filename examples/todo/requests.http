@@ -1,0 +1,44 @@
+# Todo API — auto-CRUD example
+#
+# mockr gives you GET, POST, PUT, PATCH, DELETE for free
+# when you define an endpoint with `data: [...]`.
+#
+# Start the server:  npx tsx examples/todo/server.ts
+
+### List all todos
+# Returns the full array. You'll see 3 todos: "Buy milk", "Write tests", "Deploy to prod".
+GET http://localhost:3001/api/todos
+
+### Get a single todo by id
+# Append /:id to get one item. Returns the todo with id=1 ("Buy milk").
+GET http://localhost:3001/api/todos/1
+
+### Create a new todo
+# POST with a JSON body. The id is auto-generated (next available integer).
+# Response: 201 Created with the new todo including its generated id.
+POST http://localhost:3001/api/todos
+Content-Type: application/json
+
+{ "title": "Read a book", "done": false }
+
+### Update a todo (full replace)
+# PUT replaces the entire object. Here we mark todo 1 as done.
+PUT http://localhost:3001/api/todos/1
+Content-Type: application/json
+
+{ "title": "Buy milk", "done": true }
+
+### Partial update
+# PATCH merges fields. Only `done` changes here — `title` stays the same.
+PATCH http://localhost:3001/api/todos/3
+Content-Type: application/json
+
+{ "done": true }
+
+### Delete a todo
+# Removes todo with id=2. Returns 204 No Content on success.
+DELETE http://localhost:3001/api/todos/2
+
+### Verify deletion
+# List again — todo 2 should be gone.
+GET http://localhost:3001/api/todos
