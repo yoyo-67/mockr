@@ -4,9 +4,21 @@
 
 Mock API server for frontend prototyping. Define endpoints with data, get full CRUD for free. Mock the routes you're building, proxy the rest to a real backend.
 
+## Setup
+
+```bash
+npm install @yoyo-org/mockr zod
 ```
-npm install @yoyo-org/mockr
+
+Add `"type": "module"` to your `package.json`, create a server file (e.g. `mock.ts`), and run it with:
+
+```bash
+npx tsx mock.ts
 ```
+
+No `tsconfig.json` or build step needed — `tsx` runs TypeScript directly.
+
+## Quick example
 
 ```ts
 import { mockr, handler } from '@yoyo-org/mockr';
