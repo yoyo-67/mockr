@@ -18,7 +18,8 @@ export interface MockrRequest<
 
 export type HandlerResult =
   | { body: unknown; status?: number; headers?: Record<string, string> }
-  | { status: number; body: unknown; headers?: Record<string, string> };
+  | { status: number; body: unknown; headers?: Record<string, string> }
+  | { raw: true; body: string | Buffer; status: number; headers: Record<string, string> };
 
 type ResolveEndpointType<T> = T extends unknown[] ? T[number] : T;
 type AsRecord<T> = T;
@@ -109,6 +110,7 @@ export interface MockrConfig<TEndpoints = Record<string, unknown>> {
   fixtureFile?: string;
   proxy?: { target: string; targets?: Record<string, string> };
   tui?: boolean;
+  recorder?: { sessionsDir?: string; mocksDir?: string };
 }
 
 export interface EndpointInfo {
@@ -155,4 +157,13 @@ export interface MockrServer<TEndpoints = Record<string, unknown>> {
 
   // TUI
   tui(): Promise<void>;
+
+  // Recorder
+  recorder: {
+    startSession(name: string, baseUrl: string): Promise<{ id: string; name: string; baseUrl: string }>;
+    stopSession(sessionId: string): Promise<void>;
+    listSessions(): Promise<{ id: string; name: string; baseUrl: string; startedAt: number; stoppedAt?: number; entryCount: number }[]>;
+    loadSession(sessionId: string): Promise<{ id: string; name: string; entries: { url: string; method: string; status: number; size: number }[] }>;
+    mapToFile(sessionId: string, entryIds: string[], options?: { generateTypes?: boolean }): Promise<{ mapped: { url: string; method: string; bodyFile: string; typesFile?: string }[] }>;
+  } | null;
 }

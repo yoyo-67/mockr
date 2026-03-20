@@ -14,6 +14,9 @@ import type {
 } from './types.js';
 import { createEndpointHandle } from './endpoint-handle.js';
 import { createMatcher, type MatchFn } from './router.js';
+import { createRecorder, type Recorder } from './recorder.js';
+import { mkdir } from 'node:fs/promises';
+import { generateInterface, urlToFileName, urlToTypeName } from './type-generator.js';
 
 interface InternalEndpoint {
   url: string | RegExp;
@@ -79,7 +82,34 @@ function sendJson(res: ServerResponse, status: number, body: unknown, headers: R
   res.end(json);
 }
 
-function parseCli(): { tui?: boolean; port?: number; proxy?: string } {
+function sendRaw(res: ServerResponse, status: number, body: string | Buffer, headers: Record<string, string>) {
+  res.writeHead(status, {
+    'Content-Length': Buffer.byteLength(body),
+    ...headers,
+  });
+  res.end(body);
+}
+
+function sendCorsJson(res: ServerResponse, status: number, body: unknown) {
+  sendJson(res, status, body, {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': '*',
+  });
+}
+
+function handleCorsOptions(res: ServerResponse): void {
+  res.writeHead(204, {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': '*',
+    'Access-Control-Max-Age': '86400',
+  });
+  res.end();
+}
+
+
+function parseCli(): { tui?: boolean; port?: number; proxy?: string; recorder?: boolean } {
   try {
     const { values } = parseArgs({
       args: process.argv.slice(2),
@@ -87,6 +117,7 @@ function parseCli(): { tui?: boolean; port?: number; proxy?: string } {
         tui: { type: 'boolean' },
         port: { type: 'string' },
         proxy: { type: 'string' },
+        recorder: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
       },
       strict: false,
@@ -101,6 +132,7 @@ Options:
   --port <number>   Port to listen on (overrides the port in your config)
   --proxy <url>     Proxy unmatched requests to this URL
   --tui             Enable the terminal UI
+  --recorder        Enable the recorder (record & replay network traffic)
   --help, -h        Show this help message`);
       process.exit(0);
     }
@@ -108,6 +140,7 @@ Options:
       tui: values.tui as boolean | undefined,
       port: values.port ? Number(values.port) : undefined,
       proxy: values.proxy as string | undefined,
+      recorder: values.recorder as boolean | undefined,
     };
   } catch {
     return {};
@@ -122,6 +155,17 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
   if (cli.tui !== undefined) config = { ...config, tui: cli.tui };
   if (cli.port !== undefined) config = { ...config, port: cli.port };
   if (cli.proxy !== undefined) config = { ...config, proxy: { ...config.proxy, target: cli.proxy } };
+  if (cli.recorder) config = { ...config, recorder: config.recorder ?? {} };
+
+  // Initialize recorder if enabled
+  const recorderEnabled = !!config.recorder;
+  let recorder: Recorder | null = null;
+  const mocksDir = resolve(config.recorder?.mocksDir ?? 'mocks');
+
+  if (recorderEnabled) {
+    const sessionsDir = config.recorder?.sessionsDir ?? resolve('sessions');
+    recorder = createRecorder({ sessionsDir });
+  }
 
   const endpoints: InternalEndpoint[] = [];
   const middlewares: Middleware[] = [...(config.middleware || [])];
@@ -497,6 +541,195 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       return sendJson(res, 400, { error: 'Unknown scenario' });
     }
 
+    // Recorder routes (CORS-enabled)
+    if (path.startsWith('/__mockr/') && path !== '/__mockr/scenario') {
+      if (method === 'OPTIONS') {
+        return handleCorsOptions(res);
+      }
+
+      if (!recorder) {
+        return sendCorsJson(res, 400, { error: 'Recorder not enabled. Use --recorder flag or recorder config option.' });
+      }
+
+      // POST /__mockr/record/start
+      if (path === '/__mockr/record/start' && method === 'POST') {
+        const reqBody = body as { name?: string; baseUrl?: string } | undefined;
+        const name = reqBody?.name || `session-${Date.now()}`;
+        const baseUrl = reqBody?.baseUrl || '';
+        const session = await recorder.startSession(name, baseUrl);
+        return sendCorsJson(res, 200, { sessionId: session.id, name: session.name, baseUrl: session.baseUrl });
+      }
+
+      // POST /__mockr/record
+      if (path === '/__mockr/record' && method === 'POST') {
+        const reqBody = body as any;
+        if (!reqBody?.sessionId) return sendCorsJson(res, 400, { error: 'sessionId required' });
+        const entry = await recorder.record({
+          sessionId: reqBody.sessionId,
+          url: reqBody.url || '',
+          method: reqBody.method || 'GET',
+          status: reqBody.status || 200,
+          contentType: reqBody.contentType || 'application/octet-stream',
+          responseHeaders: reqBody.responseHeaders || {},
+          body: reqBody.body || '',
+          timing: reqBody.timing,
+        });
+        return sendCorsJson(res, 200, entry);
+      }
+
+      // POST /__mockr/record/stop
+      if (path === '/__mockr/record/stop' && method === 'POST') {
+        const reqBody = body as { sessionId?: string } | undefined;
+        if (!reqBody?.sessionId) return sendCorsJson(res, 400, { error: 'sessionId required' });
+        const session = await recorder.stopSession(reqBody.sessionId);
+        return sendCorsJson(res, 200, { id: session.id, name: session.name, entryCount: session.entries.length });
+      }
+
+      // GET /__mockr/sessions
+      if (path === '/__mockr/sessions' && method === 'GET') {
+        const sessions = await recorder.listSessions();
+        return sendCorsJson(res, 200, sessions.map(s => ({
+          id: s.id,
+          name: s.name,
+          baseUrl: s.baseUrl,
+          startedAt: s.startedAt,
+          stoppedAt: s.stoppedAt,
+          entryCount: s.entries.length,
+        })));
+      }
+
+      // GET/DELETE /__mockr/sessions/:id
+      if (path.startsWith('/__mockr/sessions/')) {
+        const sessionId = path.slice('/__mockr/sessions/'.length);
+        if (method === 'GET') {
+          try {
+            const session = await recorder.loadSession(sessionId);
+            return sendCorsJson(res, 200, session);
+          } catch {
+            return sendCorsJson(res, 404, { error: 'Session not found' });
+          }
+        }
+        if (method === 'DELETE') {
+          await recorder.deleteSession(sessionId);
+          return sendCorsJson(res, 200, { deleted: true });
+        }
+      }
+
+      // POST /__mockr/map — map recorded entries to mockr endpoints as files
+      if (path === '/__mockr/map' && method === 'POST') {
+        const reqBody = body as { sessionId?: string; entryIds?: string[]; generateTypes?: boolean } | undefined;
+        if (!reqBody?.sessionId || !reqBody?.entryIds?.length) {
+          return sendCorsJson(res, 400, { error: 'sessionId and entryIds[] required' });
+        }
+
+        const session = await recorder.loadSession(reqBody.sessionId);
+        const generateTypes = reqBody.generateTypes !== false;
+        const mapped: { url: string; method: string; bodyFile: string; typesFile?: string }[] = [];
+
+        await mkdir(mocksDir, { recursive: true });
+
+        for (const entryId of reqBody.entryIds) {
+          const entry = session.entries.find(e => e.id === entryId);
+          if (!entry) continue;
+
+          const parsed = new URL(entry.url, 'http://placeholder');
+          const pathname = parsed.pathname;
+          const fileName = urlToFileName(pathname);
+          const isJson = entry.contentType.includes('json');
+          const ext = isJson ? 'json' : 'txt';
+          const bodyFilePath = resolve(mocksDir, `${fileName}.${ext}`);
+          const bodyFileRelative = `${mocksDir}/${fileName}.${ext}`;
+
+          // Read body from session storage
+          const bodyContent = await readFile(
+            resolve(recorder.sessionsDir, reqBody.sessionId, 'entries', `${entryId}.body`),
+            'utf-8',
+          );
+
+          // Write formatted JSON or raw text
+          if (isJson) {
+            try {
+              const parsed = JSON.parse(bodyContent);
+              await writeFile(bodyFilePath, JSON.stringify(parsed, null, 2), 'utf-8');
+            } catch {
+              await writeFile(bodyFilePath, bodyContent, 'utf-8');
+            }
+          } else {
+            await writeFile(bodyFilePath, bodyContent, 'utf-8');
+          }
+
+          // Generate TypeScript interface
+          let typesFile: string | undefined;
+          if (generateTypes && isJson) {
+            try {
+              const parsed = JSON.parse(bodyContent);
+              const typeName = urlToTypeName(pathname);
+              const iface = generateInterface(typeName, parsed);
+              const typesPath = resolve(mocksDir, `${fileName}.d.ts`);
+              await writeFile(typesPath, iface, 'utf-8');
+              typesFile = `${mocksDir}/${fileName}.d.ts`;
+            } catch {
+              // Skip type generation on error
+            }
+          }
+
+          // Check if endpoint already exists (update it) or create new
+          const epMethod = entry.method.toUpperCase();
+          let found = false;
+          for (const ep of endpoints) {
+            const epUrl = typeof ep.url === 'string' ? ep.url : null;
+            if (epUrl === pathname && (!ep.method || ep.method.toUpperCase() === epMethod)) {
+              // Update existing endpoint
+              const bodyData = isJson ? JSON.parse(bodyContent) : bodyContent;
+              ep.handle.body = bodyData;
+              ep.handle.response = { status: entry.status === 304 ? 200 : entry.status, headers: {}, body: bodyData };
+              found = true;
+              break;
+            }
+          }
+
+          if (!found) {
+            const bodyData = isJson ? JSON.parse(bodyContent) : bodyContent;
+            const handle = createEndpointHandle([], pathname);
+            handle.body = bodyData;
+            handle.response = { status: entry.status === 304 ? 200 : entry.status, headers: {}, body: bodyData };
+            endpoints.push({
+              url: pathname,
+              method: epMethod === 'GET' ? undefined : epMethod,
+              matcher: createMatcher(pathname),
+              handle,
+              idKey: 'id',
+              isData: false,
+              isHandler: false,
+              isStatic: true,
+              handlerFn: null,
+              schemas: null,
+              disabled: false,
+            });
+          }
+
+          mapped.push({ url: pathname, method: epMethod, bodyFile: bodyFileRelative, typesFile });
+        }
+
+        return sendCorsJson(res, 200, { mapped });
+      }
+
+      // GET /__mockr/map/endpoints — list mapped endpoints
+      if (path === '/__mockr/map/endpoints' && method === 'GET') {
+        const mapped = endpoints
+          .filter(ep => typeof ep.url === 'string' && ep.isStatic)
+          .map(ep => ({
+            url: typeof ep.url === 'string' ? ep.url : '',
+            method: ep.method?.toUpperCase() || 'ALL',
+            enabled: !ep.disabled,
+          }));
+        return sendCorsJson(res, 200, mapped);
+      }
+
+      // Catch-all: unknown /__mockr/* route — return 404 instead of falling through to proxy
+      return sendCorsJson(res, 404, { error: `Unknown recorder route: ${method} ${path}` });
+    }
+
     // Run pre-middleware
     for (const mw of middlewares) {
       if (mw.pre) {
@@ -596,7 +829,11 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     const tag = source === 'mock' ? 'mock' : source === 'proxy' ? '  ->' : ' 404';
     console.log(`  ${tag}  ${method.padEnd(6)} ${status} ${fullUrl} ${ms}ms`);
 
-    sendJson(res, status, handlerResult.body, handlerResult.headers);
+    if ('raw' in handlerResult && handlerResult.raw) {
+      sendRaw(res, status, handlerResult.body as string | Buffer, handlerResult.headers as Record<string, string>);
+    } else {
+      sendJson(res, status, handlerResult.body, handlerResult.headers);
+    }
   }
 
   // Start server
@@ -749,6 +986,83 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
         async tui() {
           const { tui: tuiFn } = await import('./tui.js');
           await tuiFn(mockrServer as unknown as MockrServer);
+        },
+
+        // Recorder
+        get recorder() {
+          if (!recorder) return null;
+          const rec = recorder;
+          return {
+            async startSession(name: string, baseUrl: string) {
+              const s = await rec.startSession(name, baseUrl);
+              return { id: s.id, name: s.name, baseUrl: s.baseUrl };
+            },
+            async stopSession(sessionId: string) {
+              await rec.stopSession(sessionId);
+            },
+            async listSessions() {
+              const sessions = await rec.listSessions();
+              return sessions.map(s => ({
+                id: s.id,
+                name: s.name,
+                baseUrl: s.baseUrl,
+                startedAt: s.startedAt,
+                stoppedAt: s.stoppedAt,
+                entryCount: s.entries.length,
+              }));
+            },
+            async loadSession(sessionId: string) {
+              const s = await rec.loadSession(sessionId);
+              return {
+                id: s.id,
+                name: s.name,
+                entries: s.entries.map(e => ({
+                  url: e.url,
+                  method: e.method,
+                  status: e.status,
+                  size: e.size,
+                })),
+              };
+            },
+            async mapToFile(sessionId: string, entryIds: string[], options?: { generateTypes?: boolean }) {
+              // Delegate to the /__mockr/map route logic
+              const session = await rec.loadSession(sessionId);
+              const genTypes = options?.generateTypes !== false;
+              const mapped: { url: string; method: string; bodyFile: string; typesFile?: string }[] = [];
+              await mkdir(mocksDir, { recursive: true });
+
+              for (const entryId of entryIds) {
+                const entry = session.entries.find(e => e.id === entryId);
+                if (!entry) continue;
+                const parsedUrl = new URL(entry.url, 'http://placeholder');
+                const pathname = parsedUrl.pathname;
+                const fileName = urlToFileName(pathname);
+                const isJson = entry.contentType.includes('json');
+                const ext = isJson ? 'json' : 'txt';
+                const bodyFilePath = resolve(mocksDir, `${fileName}.${ext}`);
+                const bodyContent = await readFile(resolve(rec.sessionsDir, sessionId, 'entries', `${entryId}.body`), 'utf-8');
+
+                if (isJson) {
+                  try { await writeFile(bodyFilePath, JSON.stringify(JSON.parse(bodyContent), null, 2), 'utf-8'); }
+                  catch { await writeFile(bodyFilePath, bodyContent, 'utf-8'); }
+                } else {
+                  await writeFile(bodyFilePath, bodyContent, 'utf-8');
+                }
+
+                let typesFile: string | undefined;
+                if (genTypes && isJson) {
+                  try {
+                    const typeName = urlToTypeName(pathname);
+                    const iface = generateInterface(typeName, JSON.parse(bodyContent));
+                    await writeFile(resolve(mocksDir, `${fileName}.d.ts`), iface, 'utf-8');
+                    typesFile = `${mocksDir}/${fileName}.d.ts`;
+                  } catch { /* skip */ }
+                }
+                mapped.push({ url: pathname, method: entry.method, bodyFile: `${mocksDir}/${fileName}.${ext}`, typesFile });
+              }
+              return { mapped };
+            },
+          };
         },
       };
 

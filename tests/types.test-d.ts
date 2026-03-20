@@ -1,5 +1,5 @@
 import { describe, it, expectTypeOf } from 'vitest';
-import { mockr, handler, type EndpointHandle, type EndpointInfo, type MockrRequest, type MockrServer } from '../src/index.js';
+import { mockr, handler, type EndpointHandle, type EndpointInfo, type MockrRequest, type MockrServer, type MockrConfig, type HandlerResult, type Recorder, type RecordedEntryMeta, type SessionMeta, type RecordInput } from '../src/index.js';
 import { z } from 'zod';
 
 interface Item {
@@ -188,5 +188,137 @@ describe('Type inference', () => {
     expectTypeOf(server.listScenarios).toBeFunction();
     expectTypeOf(server.listScenarios()).toEqualTypeOf<string[]>();
     expectTypeOf(server.activeScenario).toEqualTypeOf<string | null>();
+  });
+
+});
+
+describe('Recorder type inference', () => {
+  it('MockrConfig accepts recorder with sessionsDir', () => {
+    const config: MockrConfig = { port: 3000, recorder: { sessionsDir: './sessions' } };
+    config;
+  });
+
+  it('MockrConfig recorder is optional', () => {
+    const config: MockrConfig = { port: 3000 };
+    config;
+  });
+
+  it('MockrConfig recorder sessionsDir is optional', () => {
+    const config: MockrConfig = { recorder: {} };
+    config;
+  });
+
+  it('HandlerResult accepts raw string body', () => {
+    const result: HandlerResult = { raw: true, body: '<html></html>', status: 200, headers: { 'content-type': 'text/html' } };
+    result;
+  });
+
+  it('HandlerResult accepts raw Buffer body', () => {
+    const result: HandlerResult = { raw: true, body: Buffer.from('binary'), status: 200, headers: { 'content-type': 'application/octet-stream' } };
+    result;
+  });
+
+  it('server.recorder can be null', () => {
+    const server = {} as MockrServer;
+    expectTypeOf(server.recorder).toEqualTypeOf<MockrServer['recorder']>();
+  });
+
+  it('server.recorder.startSession is callable', () => {
+    type RecorderApi = NonNullable<MockrServer['recorder']>;
+    const rec = {} as RecorderApi;
+    expectTypeOf(rec.startSession).toBeCallableWith('name', 'http://example.com');
+  });
+
+  it('server.recorder.stopSession is callable', () => {
+    type RecorderApi = NonNullable<MockrServer['recorder']>;
+    const rec = {} as RecorderApi;
+    expectTypeOf(rec.stopSession).toBeCallableWith('session-id');
+  });
+
+  it('server.recorder.listSessions is a function', () => {
+    type RecorderApi = NonNullable<MockrServer['recorder']>;
+    const rec = {} as RecorderApi;
+    expectTypeOf(rec.listSessions).toBeFunction();
+  });
+
+  it('server.recorder.mapToFile is callable', () => {
+    type RecorderApi = NonNullable<MockrServer['recorder']>;
+    const rec = {} as RecorderApi;
+    expectTypeOf(rec.mapToFile).toBeCallableWith('session-id', ['entry-1']);
+  });
+
+  it('Recorder has all session management methods', () => {
+    const recorder = {} as Recorder;
+    expectTypeOf(recorder.startSession).toBeFunction();
+    expectTypeOf(recorder.record).toBeFunction();
+    expectTypeOf(recorder.stopSession).toBeFunction();
+  });
+
+  it('Recorder has all query methods', () => {
+    const recorder = {} as Recorder;
+    expectTypeOf(recorder.listSessions).toBeFunction();
+    expectTypeOf(recorder.loadSession).toBeFunction();
+    expectTypeOf(recorder.deleteSession).toBeFunction();
+  });
+
+  it('RecordedEntryMeta has required string fields', () => {
+    const entry = {} as RecordedEntryMeta;
+    expectTypeOf(entry.id).toEqualTypeOf<string>();
+    expectTypeOf(entry.url).toEqualTypeOf<string>();
+    expectTypeOf(entry.method).toEqualTypeOf<string>();
+    expectTypeOf(entry.contentType).toEqualTypeOf<string>();
+  });
+
+  it('RecordedEntryMeta has required number fields', () => {
+    const entry = {} as RecordedEntryMeta;
+    expectTypeOf(entry.status).toEqualTypeOf<number>();
+    expectTypeOf(entry.size).toEqualTypeOf<number>();
+    expectTypeOf(entry.timestamp).toEqualTypeOf<number>();
+  });
+
+  it('RecordedEntryMeta timing is optional', () => {
+    const entry = {} as RecordedEntryMeta;
+    expectTypeOf(entry.timing).toEqualTypeOf<number | undefined>();
+  });
+
+  it('SessionMeta has identity fields', () => {
+    const session = {} as SessionMeta;
+    expectTypeOf(session.id).toEqualTypeOf<string>();
+    expectTypeOf(session.name).toEqualTypeOf<string>();
+    expectTypeOf(session.baseUrl).toEqualTypeOf<string>();
+  });
+
+  it('SessionMeta has entries array', () => {
+    const session = {} as SessionMeta;
+    expectTypeOf(session.entries).toEqualTypeOf<RecordedEntryMeta[]>();
+  });
+
+  it('SessionMeta stoppedAt is optional', () => {
+    const session = {} as SessionMeta;
+    expectTypeOf(session.startedAt).toEqualTypeOf<number>();
+    expectTypeOf(session.stoppedAt).toEqualTypeOf<number | undefined>();
+  });
+
+  it('RecordInput has required fields', () => {
+    const input = {} as RecordInput;
+    expectTypeOf(input.sessionId).toEqualTypeOf<string>();
+    expectTypeOf(input.url).toEqualTypeOf<string>();
+    expectTypeOf(input.method).toEqualTypeOf<string>();
+    expectTypeOf(input.body).toEqualTypeOf<string>();
+  });
+
+  it('RecordInput responseHeaders is a string record', () => {
+    const input = {} as RecordInput;
+    expectTypeOf(input.responseHeaders).toEqualTypeOf<Record<string, string>>();
+  });
+
+  it('RecordInput timing is optional', () => {
+    const input = {} as RecordInput;
+    expectTypeOf(input.timing).toEqualTypeOf<number | undefined>();
+  });
+
+  it('Recorder has sessionsDir', () => {
+    const recorder = {} as Recorder;
+    expectTypeOf(recorder.sessionsDir).toEqualTypeOf<string>();
   });
 });

@@ -1,6 +1,8 @@
 export { mockr } from './server.js';
 export { tui } from './tui.js';
 export { delay, auth, logger, errorInjection } from './middleware.js';
+export { createRecorder } from './recorder.js';
+export { generateInterface, urlToTypeName, urlToFileName } from './type-generator.js';
 export type {
   MockrRequest,
   MockrServer,
@@ -15,6 +17,13 @@ export type {
   ParseableSchema,
   ValidatedHandler,
 } from './types.js';
+export type {
+  Recorder,
+  RecorderOptions,
+  RecordedEntryMeta,
+  SessionMeta,
+  RecordInput,
+} from './recorder.js';
 
 import type { ParseableSchema, ValidatedHandler } from './types.js';
 

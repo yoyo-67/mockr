@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>mockr</h1>
+      <div class="server-config">
+        <label>Server:</label>
+        <input type="text" id="server-url" value="http://localhost:3210" />
+      </div>
+    </header>
+
+    <div class="toolbar">
+      <button id="btn-record" class="btn btn-record">Record</button>
+      <button id="btn-stop" class="btn btn-stop" disabled>Stop</button>
+      <button id="btn-map" class="btn btn-map" disabled>Map to mockr</button>
+      <button id="btn-select-all" class="btn">Select All API</button>
+      <span id="status" class="status">Idle</span>
+      <span id="total-size" class="total-size"></span>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="recording">Recording</button>
+      <button class="tab" data-tab="sessions">Sessions</button>
+    </div>
+
+    <div id="tab-recording" class="tab-content active">
+      <div class="filter-bar">
+        <input type="text" id="filter-input" placeholder="Filter by URL..." />
+      </div>
+      <table id="entries-table">
+        <thead>
+          <tr>
+            <th class="col-check"><input type="checkbox" id="check-all" /></th>
+            <th class="sortable" data-sort="method">Method</th>
+            <th class="sortable" data-sort="url">URL</th>
+            <th class="sortable" data-sort="status">Status</th>
+            <th class="sortable" data-sort="size">Size</th>
+            <th class="sortable" data-sort="timing">Time</th>
+          </tr>
+        </thead>
+        <tbody id="entries-body"></tbody>
+      </table>
+    </div>
+
+    <div id="tab-sessions" class="tab-content">
+      <button id="btn-refresh-sessions" class="btn">Refresh</button>
+      <table id="sessions-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Entries</th>
+            <th>Date</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="sessions-body"></tbody>
+      </table>
+    </div>
+  </div>
+  <script src="panel.js"></script>
+</body>
+</html>

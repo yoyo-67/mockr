@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["service-worker.ts"],
+  "sourcesContent": ["// Service worker for mockr extension\n// Currently minimal \u2014 map-to-file doesn't need background processing\nconsole.log('[mockr] Service worker loaded');\n"],
+  "mappings": ";AAEA,QAAQ,IAAI,+BAA+B;",
+  "names": []
+}
