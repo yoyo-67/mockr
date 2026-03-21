@@ -1,7 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import type { MockrRequest, EndpointHandle, HandlerContext, HandlerResult } from './types.js';
 
-export function createEndpointHandle(initialData: unknown[], url: string, idKey: string = 'id'): EndpointHandle {
+export function createEndpointHandle(initialData: unknown[], url: string, idKey: string = 'id'): EndpointHandle<unknown> {
   const initial = structuredClone(initialData);
   let data = structuredClone(initialData) as Record<string, unknown>[];
   let staticBody: unknown = undefined;
@@ -21,7 +21,7 @@ export function createEndpointHandle(initialData: unknown[], url: string, idKey:
     return Math.max(...ids) + 1;
   }
 
-  const handle: EndpointHandle = {
+  const handle: EndpointHandle<unknown> = {
     get data() {
       return data;
     },

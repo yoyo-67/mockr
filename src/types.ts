@@ -21,33 +21,33 @@ export type HandlerResult =
   | { status: number; body: unknown; headers?: Record<string, string> }
   | { raw: true; body: string | Buffer; status: number; headers: Record<string, string> };
 
-type ResolveEndpointType<T> = T extends unknown[] ? T[number] : T;
-type AsRecord<T> = T;
-
 export interface HandlerContext<TEndpoints = Record<string, unknown>> {
   endpoints: [keyof TEndpoints] extends [never]
     ? (url: string) => EndpointHandle
-    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<AsRecord<ResolveEndpointType<TEndpoints[K]>>>;
+    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K]>;
 }
 
+/** Element type: unwraps T[] to T, keeps non-arrays as-is */
+type ElementOf<T> = T extends (infer U)[] ? U : T;
+
 export interface EndpointHandle<T = Record<string, unknown>> {
-  data: T[];
-  findById(id: string | number): T | undefined;
-  where(filter: Partial<T>): T[];
-  where(predicate: (item: T) => boolean): T[];
-  first(): T | undefined;
+  data: T;
+  findById(id: string | number): ElementOf<T> | undefined;
+  where(filter: Partial<ElementOf<T>>): ElementOf<T>[];
+  where(predicate: (item: ElementOf<T>) => boolean): ElementOf<T>[];
+  first(): ElementOf<T> | undefined;
   count(): number;
   has(id: string | number): boolean;
-  insert(item: T): T;
+  insert(item: ElementOf<T>): ElementOf<T>;
   nextId(): number;
-  update(id: string | number, patch: Partial<T>): T | undefined;
-  updateMany(ids: (string | number)[], patch: Partial<T> | ((item: T) => Partial<T>)): T[];
-  patch(id: string | number, fields: Partial<T>, defaults?: Partial<T>): T | undefined;
+  update(id: string | number, patch: Partial<ElementOf<T>>): ElementOf<T> | undefined;
+  updateMany(ids: (string | number)[], patch: Partial<ElementOf<T>> | ((item: ElementOf<T>) => Partial<ElementOf<T>>)): ElementOf<T>[];
+  patch(id: string | number, fields: Partial<ElementOf<T>>, defaults?: Partial<ElementOf<T>>): ElementOf<T> | undefined;
   remove(id: string | number): boolean;
   clear(): void;
   reset(): void;
   save(path: string): Promise<void>;
-  body: unknown;
+  body: T;
   response: { status: number; headers: Record<string, string>; body: unknown };
   handler: ((req: MockrRequest, ctx: HandlerContext<any>) => HandlerResult | Promise<HandlerResult>) | null;
 }
@@ -78,11 +78,10 @@ export interface Middleware {
 }
 
 export type EndpointDef<TEndpoints = Record<string, unknown>> =
-  | { url: string | RegExp; body: unknown; method?: string; bodyFile?: never; response?: never; data?: never; dataFile?: never; handler?: never }
-  | { url: string | RegExp; bodyFile: string; method?: string; body?: never; response?: never; data?: never; dataFile?: never; handler?: never }
-  | { url: string | RegExp; response: { status: number; headers?: Record<string, string>; body: unknown }; method?: string; body?: never; bodyFile?: never; data?: never; dataFile?: never; handler?: never }
-  | { url: string | RegExp; data: unknown[]; idKey?: string; method?: string; body?: never; bodyFile?: never; response?: never; dataFile?: never; handler?: never }
-  | { url: string | RegExp; dataFile: string; idKey?: string; method?: string; body?: never; bodyFile?: never; response?: never; data?: never; handler?: never }
+  | { url: string | RegExp; body: unknown; method?: string; response?: never; data?: never; dataFile?: never; handler?: never }
+  | { url: string | RegExp; response: { status: number; headers?: Record<string, string>; body: unknown }; method?: string; body?: never; data?: never; dataFile?: never; handler?: never }
+  | { url: string | RegExp; data: unknown[]; idKey?: string; method?: string; body?: never; response?: never; dataFile?: never; handler?: never }
+  | { url: string | RegExp; dataFile: string; idKey?: string; method?: string; body?: never; response?: never; data?: never; handler?: never }
   | {
       url: string | RegExp;
       handler:
@@ -90,7 +89,6 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
         | ValidatedHandler<any, any, any, TEndpoints>;
       method?: string;
       body?: never;
-      bodyFile?: never;
       response?: never;
       data?: never;
       dataFile?: never;
@@ -99,7 +97,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
 export interface ScenarioSetup<TEndpoints = Record<string, unknown>> {
   endpoint: [keyof TEndpoints] extends [never]
     ? (url: string) => EndpointHandle
-    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<AsRecord<ResolveEndpointType<TEndpoints[K]>>>;
+    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K]>;
 }
 
 export interface MockrConfig<TEndpoints = Record<string, unknown>> {
@@ -126,7 +124,7 @@ export interface MockrServer<TEndpoints = Record<string, unknown>> {
   port: number;
   endpoint: [keyof TEndpoints] extends [never]
     ? (url: string) => EndpointHandle
-    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<AsRecord<ResolveEndpointType<TEndpoints[K]>>>;
+    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K]>;
   use(middleware: Middleware): void;
   scenario(name: string): Promise<void>;
   reset(): Promise<void>;

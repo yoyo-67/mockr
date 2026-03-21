@@ -1,100 +1,194 @@
-import { readFile, writeFile } from 'node:fs/promises';
-import { urlToTypeName } from './type-generator.js';
+import { Project, SyntaxKind, type SourceFile, type TypeLiteralNode, type ArrayLiteralExpression } from 'ts-morph';
+import { relative, dirname } from 'node:path';
+
+const project = new Project({ useInMemoryFileSystem: false, skipAddingFilesFromTsConfig: true });
+
+function getSourceFile(filePath: string): SourceFile {
+  const existing = project.getSourceFile(filePath);
+  if (existing) {
+    existing.refreshFromFileSystemSync();
+    return existing;
+  }
+  return project.addSourceFileAtPath(filePath);
+}
+
+function findEndpointsArray(src: SourceFile): ArrayLiteralExpression | undefined {
+  const props = src.getDescendantsOfKind(SyntaxKind.PropertyAssignment);
+  for (const prop of props) {
+    if (prop.getName() === 'endpoints') {
+      const init = prop.getInitializer();
+      if (init?.isKind(SyntaxKind.ArrayLiteralExpression)) return init;
+    }
+  }
+  return undefined;
+}
+
+function findEndpointsType(src: SourceFile): TypeLiteralNode | undefined {
+  for (const alias of src.getTypeAliases()) {
+    if (alias.getName() === 'Endpoints') {
+      const typeNode = alias.getTypeNode();
+      if (typeNode?.isKind(SyntaxKind.TypeLiteral)) return typeNode;
+    }
+  }
+  return undefined;
+}
+
+function urlToTypeName(pathname: string): string {
+  return pathname
+    .replace(/^\//, '')
+    .replace(/\/+$/, '')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .replace(/\s/g, '');
+}
 
 /**
- * Adds a bodyFile endpoint entry to the server file, along with
- * the generated type import and Endpoints type entry.
+ * Computes the relative import path from the server file to the types file.
+ * e.g. serverFile = "src/server.ts", typesFile = "mocks/api-v1-projects.d.ts"
+ * → "../mocks/api-v1-projects.js"
+ */
+function computeTypeImportPath(serverFile: string, typesAbsPath: string): string {
+  const rel = relative(dirname(serverFile), typesAbsPath);
+  // Replace .d.ts with .js for TypeScript module resolution
+  const importPath = rel.replace(/\.d\.ts$/, '.js');
+  return importPath.startsWith('.') ? importPath : './' + importPath;
+}
+
+/**
+ * Adds a bodyFile endpoint to the server file with type import and Endpoints type entry.
  */
 export async function addEndpointToServerFile(
   serverFile: string,
-  entry: { url: string; method: string; bodyFile: string },
+  entry: { url: string; method: string; filePath: string; typesFile?: string },
 ): Promise<void> {
-  let src = await readFile(serverFile, 'utf-8');
+  const src = getSourceFile(serverFile);
 
-  // Skip if this URL is already in the server file
-  if (src.includes(`'${entry.url}'`) || src.includes(`"${entry.url}"`)) return;
+  // Skip if URL already exists
+  const fullText = src.getFullText();
+  if (fullText.includes(`'${entry.url}'`) || fullText.includes(`"${entry.url}"`)) return;
 
-  const typeName = urlToTypeName(entry.url);
+  // 1. Add type import and Endpoints type entry if typesFile is provided
+  if (entry.typesFile) {
+    const typeName = urlToTypeName(entry.url);
+    const importPath = computeTypeImportPath(serverFile, entry.typesFile);
 
-  // 1. Add import for the generated type
-  if (entry.bodyFile.endsWith('.json')) {
-    const typeImportPath = entry.bodyFile.replace('.json', '.js');
-    const importLine = `import type { ${typeName} } from '${typeImportPath}'`;
-    if (!src.includes(typeName)) {
-      const lastImportIdx = src.lastIndexOf('\nimport ');
-      if (lastImportIdx !== -1) {
-        const lineEnd = src.indexOf('\n', lastImportIdx + 1);
-        src = src.slice(0, lineEnd + 1) + importLine + '\n' + src.slice(lineEnd + 1);
-      }
+    if (!fullText.includes(typeName)) {
+      src.addImportDeclaration({
+        namedImports: [typeName],
+        moduleSpecifier: importPath,
+        isTypeOnly: true,
+      });
+    }
+
+    const endpointsType = findEndpointsType(src);
+    if (endpointsType) {
+      endpointsType.addProperty({
+        name: `'${entry.url}'`,
+        type: typeName,
+      });
     }
   }
 
-  // 2. Add to Endpoints type (if it exists)
-  const endpointsTypeMatch = src.match(/type\s+Endpoints\s*=\s*\{/);
-  if (endpointsTypeMatch && endpointsTypeMatch.index !== undefined) {
-    const typeStart = endpointsTypeMatch.index + endpointsTypeMatch[0].length;
-    let depth = 1;
-    let typeEnd = typeStart;
-    for (let i = typeStart; i < src.length && depth > 0; i++) {
-      if (src[i] === '{') depth++;
-      if (src[i] === '}') depth--;
-      if (depth === 0) typeEnd = i;
-    }
-    const newTypeLine = `  '${entry.url}': ${typeName}`;
-    src = src.slice(0, typeEnd) + newTypeLine + '\n' + src.slice(typeEnd);
+  // 2. Add dataFile entry to endpoints array
+  const endpointsArray = findEndpointsArray(src);
+  if (endpointsArray) {
+    endpointsArray.addElement(
+      `{ url: '${entry.url}', dataFile: '${entry.filePath}' }`,
+    );
   }
 
-  // 3. Add bodyFile entry to endpoints array
-  const methodPart = entry.method !== 'GET' ? ` method: '${entry.method}',` : '';
-  const newLine = `    { url: '${entry.url}',${methodPart} bodyFile: '${entry.bodyFile}' },`;
-
-  const endpointsMatch = src.match(/endpoints:\s*\[/);
-  if (endpointsMatch && endpointsMatch.index !== undefined) {
-    const startIdx = endpointsMatch.index + endpointsMatch[0].length;
-    let depth = 1;
-    let insertIdx = startIdx;
-    for (let i = startIdx; i < src.length && depth > 0; i++) {
-      if (src[i] === '[') depth++;
-      if (src[i] === ']') depth--;
-      if (depth === 0) insertIdx = i;
-    }
-    src = src.slice(0, insertIdx) + newLine + '\n  ' + src.slice(insertIdx);
-  }
-
-  await writeFile(serverFile, src, 'utf-8');
+  await src.save();
 }
 
 /**
  * Removes an endpoint entry from the server file by URL.
  */
 export async function removeEndpointFromServerFile(serverFile: string, url: string): Promise<void> {
-  let src = await readFile(serverFile, 'utf-8');
-  const urlEscaped = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  src = src.replace(new RegExp(`\\s*\\{[^}]*url:\\s*['"]${urlEscaped}['"][^}]*\\},?\\n?`), '\n');
-  await writeFile(serverFile, src, 'utf-8');
+  const src = getSourceFile(serverFile);
+  const typeName = urlToTypeName(url);
+
+  // 1. Remove from endpoints array
+  const endpointsArray = findEndpointsArray(src);
+  if (endpointsArray) {
+    for (const element of endpointsArray.getElements()) {
+      const text = element.getText();
+      if (text.includes(`'${url}'`) || text.includes(`"${url}"`)) {
+        const idx = endpointsArray.getElements().indexOf(element);
+        endpointsArray.removeElement(idx);
+        break;
+      }
+    }
+  }
+
+  // 2. Remove from Endpoints type
+  const endpointsType = findEndpointsType(src);
+  if (endpointsType) {
+    for (const prop of endpointsType.getProperties()) {
+      if (prop.isKind(SyntaxKind.PropertySignature) && prop.getName() === `'${url}'`) {
+        prop.remove();
+        break;
+      }
+    }
+  }
+
+  // 3. Remove the type import if no longer referenced
+  if (typeName && !src.getFullText().includes(typeName)) {
+    // Already removed by type property removal — check again after save
+  }
+  for (const imp of src.getImportDeclarations()) {
+    const named = imp.getNamedImports();
+    if (named.some(n => n.getName() === typeName)) {
+      if (named.length === 1) imp.remove();
+      else named.find(n => n.getName() === typeName)?.remove();
+      break;
+    }
+  }
+
+  await src.save();
 }
 
 /**
  * Replaces a URL string in the server file.
  */
 export async function updateUrlInServerFile(serverFile: string, oldUrl: string, newUrl: string): Promise<void> {
-  let src = await readFile(serverFile, 'utf-8');
-  src = src.replace(
-    new RegExp(`(['"])${oldUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\1`),
-    `'${newUrl}'`,
-  );
-  await writeFile(serverFile, src, 'utf-8');
+  const src = getSourceFile(serverFile);
+
+  for (const s of src.getDescendantsOfKind(SyntaxKind.StringLiteral)) {
+    if (s.getLiteralValue() === oldUrl) {
+      s.setLiteralValue(newUrl);
+    }
+  }
+
+  await src.save();
 }
 
 /**
  * Changes bodyFile to handler in the server file for a given URL.
  */
 export async function changeToHandlerInServerFile(serverFile: string, url: string): Promise<void> {
-  let src = await readFile(serverFile, 'utf-8');
-  const urlEscaped = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const bodyFileRegex = new RegExp(
-    `(\\{[^}]*url:\\s*['"]${urlEscaped}['"][^}]*)bodyFile:\\s*['"][^'"]+['"]`,
-  );
-  src = src.replace(bodyFileRegex, `$1handler: (req) => ({ body: {} })`);
-  await writeFile(serverFile, src, 'utf-8');
+  const src = getSourceFile(serverFile);
+  const endpointsArray = findEndpointsArray(src);
+  if (!endpointsArray) return;
+
+  for (const element of endpointsArray.getElements()) {
+    if (!element.isKind(SyntaxKind.ObjectLiteralExpression)) continue;
+
+    const urlProp = element.getProperty('url');
+    if (!urlProp?.isKind(SyntaxKind.PropertyAssignment)) continue;
+    const urlValue = urlProp.getInitializer();
+    if (!urlValue?.isKind(SyntaxKind.StringLiteral) || urlValue.getLiteralValue() !== url) continue;
+
+    const dataFileProp = element.getProperty('dataFile');
+    if (dataFileProp) dataFileProp.remove();
+
+    if (!element.getProperty('handler')) {
+      element.addPropertyAssignment({
+        name: 'handler',
+        initializer: '(req) => ({ body: {} })',
+      });
+    }
+    break;
+  }
+
+  await src.save();
 }

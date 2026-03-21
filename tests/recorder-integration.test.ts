@@ -152,7 +152,7 @@ describe('Recorder integration (server routes)', () => {
 
   // Map to file tests
 
-  it('maps recorded entries to JSON files and creates endpoints', async () => {
+  it('maps recorded entries to JSON files and creates handler endpoints', async () => {
     await setup();
     const { sessionId, entryIds } = await recordSession('map-test', [
       { url: 'http://example.com/api/users', method: 'GET', status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 1, name: 'Alice' }]) },
@@ -173,10 +173,61 @@ describe('Recorder integration (server routes)', () => {
     const content = await readFile(join(mocksDir, 'api-users.json'), 'utf-8');
     expect(JSON.parse(content)).toEqual([{ id: 1, name: 'Alice' }]);
 
-    // Verify endpoint was created and serves the data
+    // Mapped endpoint should be a handler (not static)
+    const eps = await (await fetch(`${server.url}/__mockr/endpoints`)).json() as any[];
+    const mapped = eps.find((e: any) => e.url === '/api/users');
+    expect(mapped.type).toBe('data');
+
+    // Verify endpoint serves the data
     const dataRes = await fetch(`${server.url}/api/users`);
     expect(dataRes.status).toBe(200);
     expect(await dataRes.json()).toEqual([{ id: 1, name: 'Alice' }]);
+  });
+
+  it('maps array body as data endpoint with CRUD', async () => {
+    await setup();
+
+    await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: [{ url: 'http://example.com/api/items', method: 'GET', status: 200, contentType: 'application/json', body: '[{"id":1,"name":"A"}]' }],
+      }),
+    });
+
+    // GET list
+    const r1 = await fetch(`${server.url}/api/items`);
+    expect(await r1.json()).toEqual([{ id: 1, name: 'A' }]);
+
+    // POST to add
+    const r2 = await fetch(`${server.url}/api/items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 2, name: 'B' }),
+    });
+    expect(r2.status).toBe(201);
+
+    // GET by id
+    const r3 = await fetch(`${server.url}/api/items/1`);
+    expect((await r3.json() as any).name).toBe('A');
+  });
+
+  it('maps object body as static endpoint', async () => {
+    await setup();
+
+    await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: [{ url: 'http://example.com/api/config', method: 'GET', status: 200, contentType: 'application/json', body: '{"theme":"dark"}' }],
+      }),
+    });
+
+    const eps = await (await fetch(`${server.url}/__mockr/endpoints`)).json() as any[];
+    expect(eps.find((e: any) => e.url === '/api/config').type).toBe('static');
+
+    const res = await fetch(`${server.url}/api/config`);
+    expect(await res.json()).toEqual({ theme: 'dark' });
   });
 
   it('generates TypeScript interface files', async () => {
@@ -218,10 +269,10 @@ describe('Recorder integration (server routes)', () => {
     await expect(stat(join(mocksDir, 'api-data.d.ts'))).rejects.toThrow();
   });
 
-  it('mapped endpoints show in listEndpoints', async () => {
+  it('mapped array endpoints show as data in listEndpoints', async () => {
     await setup();
     const { sessionId, entryIds } = await recordSession('list-ep-test', [
-      { url: 'http://example.com/api/mapped', method: 'GET', status: 200, contentType: 'application/json', body: '"hello"' },
+      { url: 'http://example.com/api/mapped', method: 'GET', status: 200, contentType: 'application/json', body: '[{"id":1}]' },
     ]);
 
     await fetch(`${server.url}/__mockr/map`, {
@@ -231,7 +282,9 @@ describe('Recorder integration (server routes)', () => {
     });
 
     const eps = server.listEndpoints();
-    expect(eps.some(e => e.url === '/api/mapped')).toBe(true);
+    const ep = eps.find(e => e.url === '/api/mapped');
+    expect(ep).toBeTruthy();
+    expect(ep!.type).toBe('data');
   });
 
   it('updates existing endpoint when mapping same URL twice', async () => {
@@ -320,7 +373,7 @@ describe('Recorder integration (server routes)', () => {
 
   // Inline entries (in-memory recording, no session)
 
-  it('maps inline entries (no session needed)', async () => {
+  it('maps inline entries as handlers (no session needed)', async () => {
     await setup();
 
     const mapRes = await fetch(`${server.url}/__mockr/map`, {
@@ -336,6 +389,11 @@ describe('Recorder integration (server routes)', () => {
     const mapBody = await mapRes.json() as any;
     expect(mapBody.mapped).toHaveLength(1);
     expect(mapBody.mapped[0].url).toBe('/api/inline');
+
+    // Should be a handler, not static
+    const eps = await (await fetch(`${server.url}/__mockr/endpoints`)).json() as any[];
+    // Object body → static (array body would be data)
+    expect(eps.find((e: any) => e.url === '/api/inline').type).toBe('static');
 
     const res = await fetch(`${server.url}/api/inline`);
     expect(res.status).toBe(200);
@@ -456,40 +514,29 @@ describe('Recorder integration (server routes)', () => {
 
   // PATCH /__mockr/endpoints/type
 
-  it('changes static endpoint to handler', async () => {
+  it('changes static endpoint to handler (preserves data)', async () => {
     await setup();
-
-    await fetch(`${server.url}/__mockr/map`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        entries: [{ url: 'http://example.com/api/to-handler', method: 'GET', status: 200, contentType: 'application/json', body: '{"val":1}' }],
-      }),
-    });
-
-    // Verify it starts as static
+    // /api/existing is a config-defined static endpoint
     let eps = await (await fetch(`${server.url}/__mockr/endpoints`)).json() as any[];
-    expect(eps.find((e: any) => e.url === '/api/to-handler').type).toBe('static');
+    expect(eps.find((e: any) => e.url === '/api/existing').type).toBe('static');
 
-    // Change to handler
     const typeRes = await fetch(`${server.url}/__mockr/endpoints/type`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: '/api/to-handler', type: 'handler' }),
+      body: JSON.stringify({ url: '/api/existing', type: 'handler' }),
     });
     expect(typeRes.status).toBe(200);
 
-    // Verify it's now a handler
     eps = await (await fetch(`${server.url}/__mockr/endpoints`)).json() as any[];
-    expect(eps.find((e: any) => e.url === '/api/to-handler').type).toBe('handler');
+    expect(eps.find((e: any) => e.url === '/api/existing').type).toBe('handler');
 
-    // Should still serve the body
-    const dataRes = await fetch(`${server.url}/api/to-handler`);
+    // Should still serve the original body
+    const dataRes = await fetch(`${server.url}/api/existing`);
     expect(dataRes.status).toBe(200);
-    expect(await dataRes.json()).toEqual({ val: 1 });
+    expect(await dataRes.json()).toEqual({ hello: 'world' });
   });
 
-  it('changes handler endpoint back to static', async () => {
+  it('changes mapped handler back to static (preserves data)', async () => {
     await setup();
 
     await fetch(`${server.url}/__mockr/map`, {
@@ -500,12 +547,7 @@ describe('Recorder integration (server routes)', () => {
       }),
     });
 
-    // Convert to handler then back to static
-    await fetch(`${server.url}/__mockr/endpoints/type`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: '/api/back-static', type: 'handler' }),
-    });
+    // Mapped as handler, now convert to static
     await fetch(`${server.url}/__mockr/endpoints/type`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -515,11 +557,12 @@ describe('Recorder integration (server routes)', () => {
     const eps = await (await fetch(`${server.url}/__mockr/endpoints`)).json() as any[];
     expect(eps.find((e: any) => e.url === '/api/back-static').type).toBe('static');
 
+    // Should still serve the data
     const res = await fetch(`${server.url}/api/back-static`);
     expect(await res.json()).toEqual({ x: 2 });
   });
 
-  it('changes static endpoint to data when body is array', async () => {
+  it('changes handler endpoint to data when body is array', async () => {
     await setup();
 
     await fetch(`${server.url}/__mockr/map`, {
@@ -530,7 +573,7 @@ describe('Recorder integration (server routes)', () => {
       }),
     });
 
-    // Change to data
+    // Change from handler to data
     await fetch(`${server.url}/__mockr/endpoints/type`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -542,11 +585,10 @@ describe('Recorder integration (server routes)', () => {
     expect(ep.type).toBe('data');
     expect(ep.itemCount).toBe(2);
 
-    // Should support CRUD — GET list
+    // Should support CRUD
     const listRes = await fetch(`${server.url}/api/to-data`);
     expect(await listRes.json()).toEqual([{ id: 1 }, { id: 2 }]);
 
-    // POST to add
     const postRes = await fetch(`${server.url}/api/to-data`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -603,6 +645,174 @@ describe('Recorder integration (server routes)', () => {
       body: JSON.stringify({ url: '/nope' }),
     });
     expect(res.status).toBe(404);
+  });
+
+  // Server file patching
+
+  it('patches server file with handler (not bodyFile) when mapping', async () => {
+    sessionsDir = await mkdtemp(join(tmpdir(), 'mockr-rec-'));
+    mocksDir = await mkdtemp(join(tmpdir(), 'mockr-mocks-'));
+    const serverFilePath = join(sessionsDir, 'server.ts');
+    // Write a minimal server file template
+    const { writeFile: wf } = await import('node:fs/promises');
+    await wf(serverFilePath, `import { mockr } from 'mockr'
+
+type Endpoints = {
+  '/api/existing': { hello: string }
+}
+
+const server = await mockr<Endpoints>({
+  port: 0,
+  endpoints: [
+    { url: '/api/existing', body: { hello: 'world' } },
+  ],
+})
+`, 'utf-8');
+
+    server = await mockr({
+      port: 0,
+      recorder: { sessionsDir, mocksDir, serverFile: serverFilePath },
+    });
+
+    await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: [{ url: 'http://example.com/api/items', method: 'GET', status: 200, contentType: 'application/json', body: '[{"id":1}]' }],
+      }),
+    });
+
+    const src = await readFile(serverFilePath, 'utf-8');
+
+    // Array body → should use dataFile (not bodyFile)
+    expect(src).toContain('dataFile');
+    expect(src).toContain('api-items.json');
+    expect(src).not.toContain('readFileSync');
+
+    // Should have updated Endpoints type with generated type
+    expect(src).toContain('ApiItems');
+    expect(src).toContain("'/api/items'");
+
+    // Should have added type import
+    expect(src).toContain('import type');
+    expect(src).toContain('ApiItems');
+  });
+
+  it('patches server file with dataFile for object responses too', async () => {
+    sessionsDir = await mkdtemp(join(tmpdir(), 'mockr-rec-'));
+    mocksDir = await mkdtemp(join(tmpdir(), 'mockr-mocks-'));
+    const serverFilePath = join(sessionsDir, 'server.ts');
+    const { writeFile: wf } = await import('node:fs/promises');
+    await wf(serverFilePath, `import { mockr } from 'mockr'
+const server = await mockr({
+  port: 0,
+  endpoints: [],
+})
+`, 'utf-8');
+
+    server = await mockr({
+      port: 0,
+      recorder: { sessionsDir, mocksDir, serverFile: serverFilePath },
+    });
+
+    await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: [{ url: 'http://example.com/api/config', method: 'GET', status: 200, contentType: 'application/json', body: '{"theme":"dark"}' }],
+      }),
+    });
+
+    const src = await readFile(serverFilePath, 'utf-8');
+
+    // Always uses dataFile (unified)
+    expect(src).toContain('dataFile');
+    expect(src).not.toContain('bodyFile');
+  });
+
+  it('data endpoint .data is typed as element array', async () => {
+    await setup();
+
+    // Map an array response
+    await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: [{ url: 'http://example.com/api/typed-items', method: 'GET', status: 200, contentType: 'application/json', body: '[{"id":1,"name":"A"},{"id":2,"name":"B"}]' }],
+      }),
+    });
+
+    // .data should be the array
+    const handle = server.endpoint('/api/typed-items');
+    expect(handle.data).toEqual([{ id: 1, name: 'A' }, { id: 2, name: 'B' }]);
+    expect(handle.findById(1)).toEqual({ id: 1, name: 'A' });
+    expect(handle.count()).toBe(2);
+  });
+
+  it('static endpoint .body is the object', async () => {
+    await setup();
+
+    // Map an object response
+    await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: [{ url: 'http://example.com/api/obj-resp', method: 'GET', status: 200, contentType: 'application/json', body: '{"projects":[{"id":1}]}' }],
+      }),
+    });
+
+    const handle = server.endpoint('/api/obj-resp');
+    expect(handle.body).toEqual({ projects: [{ id: 1 }] });
+  });
+
+  it('delete removes endpoint from server file including type', async () => {
+    sessionsDir = await mkdtemp(join(tmpdir(), 'mockr-rec-'));
+    mocksDir = await mkdtemp(join(tmpdir(), 'mockr-mocks-'));
+    const serverFilePath = join(sessionsDir, 'server.ts');
+    const { writeFile: wf } = await import('node:fs/promises');
+    await wf(serverFilePath, `import { mockr } from 'mockr'
+
+type Endpoints = {
+  '/api/existing': { hello: string }
+}
+
+const server = await mockr<Endpoints>({
+  port: 0,
+  endpoints: [
+    { url: '/api/existing', body: { hello: 'world' } },
+  ],
+})
+`, 'utf-8');
+
+    server = await mockr({
+      port: 0,
+      recorder: { sessionsDir, mocksDir, serverFile: serverFilePath },
+    });
+
+    // Map an endpoint
+    await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: [{ url: 'http://example.com/api/removeme', method: 'GET', status: 200, contentType: 'application/json', body: '[{"id":1}]' }],
+      }),
+    });
+
+    let src = await readFile(serverFilePath, 'utf-8');
+    expect(src).toContain("'/api/removeme'");
+    expect(src).toContain('ApiRemoveme');
+
+    // Delete it
+    await fetch(`${server.url}/__mockr/endpoints`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: '/api/removeme' }),
+    });
+
+    src = await readFile(serverFilePath, 'utf-8');
+    // Endpoint entry, type, and import should all be removed
+    expect(src).not.toContain("'/api/removeme'");
+    expect(src).not.toContain('ApiRemoveme');
   });
 
   // OPTIONS preflight on recorder routes

@@ -14,7 +14,7 @@ export interface InternalEndpoint {
   url: string | RegExp;
   method?: string;
   matcher: MatchFn;
-  handle: EndpointHandle;
+  handle: EndpointHandle<unknown>;
   idKey: string;
   isData: boolean;
   isHandler: boolean;
@@ -140,7 +140,7 @@ export async function handleControlRoute(
       method: ep.method?.toUpperCase() || 'ALL',
       type: ep.isData ? 'data' : ep.isHandler ? 'handler' : 'static',
       enabled: !ep.disabled,
-      itemCount: ep.isData ? ep.handle.data.length : null,
+      itemCount: ep.isData ? (ep.handle.data as unknown[]).length : null,
     }));
     sendCorsJson(res, 200, list);
     return true;
@@ -219,7 +219,7 @@ export async function handleControlRoute(
         ep.isStatic = true;
         ep.handlerFn = null;
         ep.handle.handler = null;
-        if (!ep.handle.response) ep.handle.response = { status: 200, headers: {}, body: ep.handle.body };
+        ep.handle.response = { status: 200, headers: {}, body: ep.handle.body };
         updated = true;
       } else if (reqBody.type === 'data') {
         ep.isHandler = false;
@@ -255,7 +255,7 @@ export async function handleControlRoute(
   // GET /__mockr/map/endpoints
   if (path === '/__mockr/map/endpoints' && method === 'GET') {
     const mapped = endpoints
-      .filter(ep => typeof ep.url === 'string' && ep.isStatic)
+      .filter(ep => typeof ep.url === 'string' && (ep.isStatic || ep.isHandler))
       .map(ep => ({ url: typeof ep.url === 'string' ? ep.url : '', method: ep.method?.toUpperCase() || 'ALL', enabled: !ep.disabled }));
     sendCorsJson(res, 200, mapped);
     return true;
@@ -324,53 +324,84 @@ async function handleMap(
 
     // Generate TypeScript interface
     let typesFile: string | undefined;
+    let typesAbsPath: string | undefined;
     if (generateTypes && isJson) {
       try {
         const typeName = urlToTypeName(pathname);
         const iface = generateInterface(typeName, JSON.parse(bodyContent));
-        const typesPath = resolve(mocksDir, `${fileName}.d.ts`);
-        await writeFile(typesPath, iface, 'utf-8');
-        typesFile = './' + relative(process.cwd(), typesPath);
+        typesAbsPath = resolve(mocksDir, `${fileName}.d.ts`);
+        await writeFile(typesAbsPath, iface, 'utf-8');
+        typesFile = './' + relative(process.cwd(), typesAbsPath);
       } catch { /* skip */ }
     }
 
-    // Create/update in-memory endpoint
+    // Create/update in-memory endpoint — data endpoint if array, static otherwise
     const epMethod = entry.method.toUpperCase();
+    const bodyData = isJson ? JSON.parse(bodyContent) : bodyContent;
+    const isArray = Array.isArray(bodyData);
+
     let found = false;
     for (const ep of endpoints) {
       const epUrl = typeof ep.url === 'string' ? ep.url : null;
       if (epUrl === pathname && (!ep.method || ep.method.toUpperCase() === epMethod)) {
-        const bodyData = isJson ? JSON.parse(bodyContent) : bodyContent;
-        ep.handle.body = bodyData;
-        ep.handle.response = { status: entry.status === 304 ? 200 : entry.status, headers: {}, body: bodyData };
+        if (isArray) {
+          ep.handle.data = bodyData;
+          ep.isData = true;
+          ep.isStatic = false;
+          ep.isHandler = false;
+          ep.handlerFn = null;
+          ep.handle.handler = null;
+        } else {
+          ep.handle.body = bodyData;
+          ep.handle.response = { status: entry.status === 304 ? 200 : entry.status, headers: {}, body: bodyData };
+          ep.isStatic = true;
+          ep.isData = false;
+          ep.isHandler = false;
+        }
         found = true;
         break;
       }
     }
 
     if (!found) {
-      const bodyData = isJson ? JSON.parse(bodyContent) : bodyContent;
-      const handle = createEndpointHandle([], pathname);
-      handle.body = bodyData;
-      handle.response = { status: entry.status === 304 ? 200 : entry.status, headers: {}, body: bodyData };
-      endpoints.push({
-        url: pathname,
-        method: epMethod === 'GET' ? undefined : epMethod,
-        matcher: createMatcher(pathname),
-        handle,
-        idKey: 'id',
-        isData: false,
-        isHandler: false,
-        isStatic: true,
-        handlerFn: null,
-        schemas: null,
-        disabled: false,
-      });
+      if (isArray) {
+        const handle = createEndpointHandle(bodyData, pathname);
+        endpoints.push({
+          url: pathname,
+          method: epMethod === 'GET' ? undefined : epMethod,
+          matcher: createMatcher(pathname),
+          handle,
+          idKey: 'id',
+          isData: true,
+          isHandler: false,
+          isStatic: false,
+          handlerFn: null,
+          schemas: null,
+          disabled: false,
+        });
+      } else {
+        const handle = createEndpointHandle([], pathname);
+        handle.body = bodyData;
+        handle.response = { status: entry.status === 304 ? 200 : entry.status, headers: {}, body: bodyData };
+        endpoints.push({
+          url: pathname,
+          method: epMethod === 'GET' ? undefined : epMethod,
+          matcher: createMatcher(pathname),
+          handle,
+          idKey: 'id',
+          isData: false,
+          isHandler: false,
+          isStatic: true,
+          handlerFn: null,
+          schemas: null,
+          disabled: false,
+        });
+      }
     }
 
     // Patch server file
     if (serverFile) {
-      try { await addEndpointToServerFile(serverFile, { url: pathname, method: epMethod, bodyFile: bodyFileRelative }); }
+      try { await addEndpointToServerFile(serverFile, { url: pathname, method: epMethod, filePath: bodyFileRelative, typesFile: typesAbsPath }); }
       catch (err) { console.error('[mockr] Failed to patch server file:', err); }
     }
 

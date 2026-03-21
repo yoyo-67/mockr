@@ -14,15 +14,16 @@ interface Config {
 }
 
 type MyEndpoints = {
-  '/api/items': Item;
+  '/api/items': Item[];
   '/api/config': Config;
 };
 
 describe('Type inference', () => {
-  it('endpoint handle is typed', () => {
-    const handle = {} as EndpointHandle<Item>;
+  it('endpoint handle with array T', () => {
+    const handle = {} as EndpointHandle<Item[]>;
 
     expectTypeOf(handle.data).toEqualTypeOf<Item[]>();
+    expectTypeOf(handle.body).toEqualTypeOf<Item[]>();
     expectTypeOf(handle.findById(1)).toEqualTypeOf<Item | undefined>();
     expectTypeOf(handle.where({ price: 1 })).toEqualTypeOf<Item[]>();
     expectTypeOf(handle.first()).toEqualTypeOf<Item | undefined>();
@@ -30,15 +31,22 @@ describe('Type inference', () => {
     expectTypeOf(handle.has(1)).toEqualTypeOf<boolean>();
   });
 
-  it('insert accepts full item', () => {
-    const handle = {} as EndpointHandle<Item>;
+  it('endpoint handle with object T', () => {
+    const handle = {} as EndpointHandle<Config>;
+
+    expectTypeOf(handle.data).toEqualTypeOf<Config>();
+    expectTypeOf(handle.body).toEqualTypeOf<Config>();
+  });
+
+  it('insert accepts element type', () => {
+    const handle = {} as EndpointHandle<Item[]>;
 
     expectTypeOf(handle.insert).toBeCallableWith({ id: 1, name: 'X', price: 1 });
     expectTypeOf(handle.insert).returns.toEqualTypeOf<Item>();
   });
 
-  it('update accepts partial fields', () => {
-    const handle = {} as EndpointHandle<Item>;
+  it('update accepts partial element fields', () => {
+    const handle = {} as EndpointHandle<Item[]>;
 
     expectTypeOf(handle.update).toBeCallableWith(1, { name: 'Y' });
     expectTypeOf(handle.update).toBeCallableWith(1, { price: 5 });
@@ -46,13 +54,10 @@ describe('Type inference', () => {
   });
 
   it('where accepts partial filter or predicate', () => {
-    const handle = {} as EndpointHandle<Item>;
+    const handle = {} as EndpointHandle<Item[]>;
 
-    // Object filter
     expectTypeOf(handle.where).toBeCallableWith({ price: 1 });
     expectTypeOf(handle.where).toBeCallableWith({ name: 'X', price: 1 });
-
-    // Predicate function
     expectTypeOf(handle.where).toBeCallableWith((item: Item) => item.price > 5);
   });
 
@@ -67,6 +72,9 @@ describe('Type inference', () => {
     const items = server.endpoint('/api/items');
     expectTypeOf(items.data).toEqualTypeOf<Item[]>();
     expectTypeOf(items.findById(1)).toEqualTypeOf<Item | undefined>();
+
+    const config = server.endpoint('/api/config');
+    expectTypeOf(config.body).toEqualTypeOf<Config>();
   });
 
   it('handler context endpoints are typed', () => {
@@ -79,11 +87,11 @@ describe('Type inference', () => {
       expectTypeOf(items.findById(1)).toEqualTypeOf<Item | undefined>();
 
       const config = endpoints('/api/config');
-      expectTypeOf(config.data).toEqualTypeOf<Config[]>();
+      expectTypeOf(config.body).toEqualTypeOf<Config>();
 
       return { body: { count: items.count() } };
     };
-    handler; // prevent unused error
+    handler;
   });
 
   it('request body can be typed', () => {
@@ -320,5 +328,67 @@ describe('Recorder type inference', () => {
   it('Recorder has sessionsDir', () => {
     const recorder = {} as Recorder;
     expectTypeOf(recorder.sessionsDir).toEqualTypeOf<string>();
+  });
+});
+
+describe('Mapped endpoint type inference', () => {
+  interface Project {
+    id: string;
+    name: string;
+  }
+
+  type AppEndpoints = {
+    '/api/items': { id: number; name: string }[];   // array → data endpoint
+    '/api/projects': { projects: Project[] };         // object → static endpoint
+  };
+
+  it('data endpoint .data is the array type', async () => {
+    const server = await mockr<AppEndpoints>({
+      endpoints: [{ url: '/api/items', data: [{ id: 1, name: 'A' }] }],
+    });
+    const handle = server.endpoint('/api/items');
+    expectTypeOf(handle.data).toEqualTypeOf<{ id: number; name: string }[]>();
+    expectTypeOf(handle.findById(1)).toEqualTypeOf<{ id: number; name: string } | undefined>();
+  });
+
+  it('static endpoint .body is the object type', async () => {
+    const server = await mockr<AppEndpoints>({
+      endpoints: [{ url: '/api/projects', body: { projects: [] } }],
+    });
+    const handle = server.endpoint('/api/projects');
+    expectTypeOf(handle.body).toEqualTypeOf<{ projects: Project[] }>();
+    expectTypeOf(handle.data).toEqualTypeOf<{ projects: Project[] }>();
+  });
+
+  it('handler context endpoints are typed from Endpoints generic', async () => {
+    const server = await mockr<AppEndpoints>({
+      endpoints: [
+        { url: '/api/items', data: [] },
+        {
+          url: '/api/projects',
+          handler: (_req, ctx) => {
+            const items = ctx.endpoints('/api/items');
+            expectTypeOf(items.data).toEqualTypeOf<{ id: number; name: string }[]>();
+            expectTypeOf(items.findById(1)).toEqualTypeOf<{ id: number; name: string } | undefined>();
+            return { body: { count: items.count() } };
+          },
+        },
+      ],
+    });
+    server;
+  });
+
+  it('server.recorder.mapToFile returns mapped result', () => {
+    type RecorderApi = NonNullable<MockrServer['recorder']>;
+    const rec = {} as RecorderApi;
+    expectTypeOf(rec.mapToFile).toBeCallableWith('session-id', ['entry-1']);
+    expectTypeOf(rec.mapToFile).toBeCallableWith('session-id', ['entry-1'], { generateTypes: true });
+  });
+
+  it('MockrConfig accepts serverFile in recorder', () => {
+    const config: MockrConfig = {
+      recorder: { serverFile: './src/server.ts', mocksDir: './mocks' },
+    };
+    config;
   });
 });

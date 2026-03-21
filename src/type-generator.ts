@@ -17,12 +17,26 @@ export function urlToFileName(pathname: string): string {
     .replace(/[^a-zA-Z0-9]+/g, '-');
 }
 
+/**
+ * Generates a TypeScript interface/type from a JSON value.
+ * For arrays, exports the ELEMENT type (not the array) — matches mockr's
+ * Endpoints type convention where `EndpointHandle<T>` has `.data: T[]`.
+ */
 export function generateInterface(name: string, value: unknown): string {
+  // For arrays, generate the element type with the given name
+  if (Array.isArray(value) && value.length > 0) {
+    if (value.every((v) => v !== null && typeof v === 'object' && !Array.isArray(v))) {
+      const interfaces: string[] = [];
+      const merged = mergeObjectShapes(value as Record<string, unknown>[]);
+      emitInterface(name, merged, interfaces);
+      return interfaces.join('\n\n') + '\n';
+    }
+  }
+
   const interfaces: string[] = [];
   const rootType = inferType(name, value, interfaces);
 
   if (interfaces.length === 0) {
-    // Primitive or simple type
     return `export type ${name} = ${rootType};\n`;
   }
 

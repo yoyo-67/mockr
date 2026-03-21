@@ -59,14 +59,14 @@ describe('JSON files', () => {
     await unlink(dataPath).catch(() => {});
   });
 
-  it('loads bodyFile for individual endpoint', async () => {
+  it('loads dataFile for object (static endpoint)', async () => {
     await mkdir(FIXTURES_DIR, { recursive: true });
     const bodyPath = `${FIXTURES_DIR}/config.json`;
     await writeFile(bodyPath, JSON.stringify({ theme: 'dark' }));
 
     server = await mockr({
       endpoints: [
-        { url: '/api/config', bodyFile: bodyPath },
+        { url: '/api/config', dataFile: bodyPath },
       ],
     });
 

@@ -42,7 +42,8 @@
     }
   },
   "dependencies": {
+    "@yoyo-org/tui-kit": "^0.1.0",
     "path-to-regexp": "^8.2.0",
-    "@yoyo-org/tui-kit": "^0.1.0"
+    "ts-morph": "^27.0.2"
   }
 }

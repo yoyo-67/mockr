@@ -113,10 +113,17 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       endpoints.push({ url: def.url, method: def.method, matcher, handle, idKey: key, isData: true, isHandler: false, isStatic: false, handlerFn: null, schemas: null, disabled: false });
     } else if ('dataFile' in def && def.dataFile !== undefined) {
       const raw = await readFile(resolve(def.dataFile), 'utf-8');
-      const data = JSON.parse(raw) as unknown[];
-      const key = (def as any).idKey || 'id';
-      const handle = createEndpointHandle(data, urlStr, key);
-      endpoints.push({ url: def.url, method: def.method, matcher, handle, idKey: key, isData: true, isHandler: false, isStatic: false, handlerFn: null, schemas: null, disabled: false });
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const key = (def as any).idKey || 'id';
+        const handle = createEndpointHandle(parsed, urlStr, key);
+        endpoints.push({ url: def.url, method: def.method, matcher, handle, idKey: key, isData: true, isHandler: false, isStatic: false, handlerFn: null, schemas: null, disabled: false });
+      } else {
+        const handle = createEndpointHandle([], urlStr);
+        handle.body = parsed;
+        handle.response = { status: 200, headers: {}, body: parsed };
+        endpoints.push({ url: def.url, method: def.method, matcher, handle, idKey: 'id', isData: false, isHandler: false, isStatic: true, handlerFn: null, schemas: null, disabled: false });
+      }
     } else if ('handler' in def && def.handler !== undefined) {
       const h = def.handler;
       const isValidated = typeof h === 'object' && 'fn' in h;
@@ -132,13 +139,6 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       handle.body = def.response.body;
       handle.response = { status: def.response.status, headers: def.response.headers || {}, body: def.response.body };
       endpoints.push({ url: def.url, method: def.method, matcher, handle, idKey: 'id', isData: false, isHandler: false, isStatic: true, handlerFn: null, schemas: null, disabled: false });
-    } else if ('bodyFile' in def && def.bodyFile !== undefined) {
-      const raw = await readFile(resolve(def.bodyFile), 'utf-8');
-      const body = JSON.parse(raw);
-      const handle = createEndpointHandle([], urlStr);
-      handle.body = body;
-      handle.response = { status: 200, headers: {}, body };
-      endpoints.push({ url: def.url, method: def.method, matcher, handle, idKey: 'id', isData: false, isHandler: false, isStatic: true, handlerFn: null, schemas: null, disabled: false });
     } else if ('body' in def && def.body !== undefined) {
       const handle = createEndpointHandle([], urlStr);
       handle.body = def.body;
@@ -148,7 +148,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
   }
 
   // Endpoint lookup for handlers
-  function getEndpointHandle(url: string): EndpointHandle {
+  function getEndpointHandle(url: string): EndpointHandle<unknown> {
     for (const ep of endpoints) {
       const epUrl = typeof ep.url === 'string' ? ep.url : ep.url.source;
       if (epUrl === url) return ep.handle;
@@ -420,7 +420,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
           return endpoints.map((ep) => {
             const epUrl = typeof ep.url === 'string' ? ep.url : ep.url.source;
             const type = ep.isData ? 'data' as const : ep.isHandler ? 'handler' as const : 'static' as const;
-            return { url: epUrl, method: ep.method?.toUpperCase() || 'ALL', type, enabled: !ep.disabled, itemCount: ep.isData ? ep.handle.data.length : null };
+            return { url: epUrl, method: ep.method?.toUpperCase() || 'ALL', type, enabled: !ep.disabled, itemCount: ep.isData ? (ep.handle.data as unknown[]).length : null };
           });
         },
         enableEndpoint(epUrl: string, method?: string) {
