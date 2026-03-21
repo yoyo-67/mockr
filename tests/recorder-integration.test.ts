@@ -684,18 +684,17 @@ const server = await mockr<Endpoints>({
 
     const src = await readFile(serverFilePath, 'utf-8');
 
-    // Array body → should use dataFile (not bodyFile)
-    expect(src).toContain('dataFile');
-    expect(src).toContain('api-items.json');
-    expect(src).not.toContain('readFileSync');
+    const norm = src.replace(/['"]/g, '');
 
-    // Should have updated Endpoints type with generated type
-    expect(src).toContain('ApiItems');
-    expect(src).toContain("'/api/items'");
+    // Array body → should use dataFile
+    expect(norm).toContain('dataFile');
+    expect(norm).toContain('api-items.json');
+    expect(norm).not.toContain('readFileSync');
 
-    // Should have added type import
-    expect(src).toContain('import type');
-    expect(src).toContain('ApiItems');
+    // Should have updated Endpoints type and import
+    expect(norm).toContain('ApiItems');
+    expect(norm).toContain('/api/items');
+    expect(norm).toContain('import type');
   });
 
   it('patches server file with dataFile for object responses too', async () => {
@@ -799,8 +798,9 @@ const server = await mockr<Endpoints>({
     });
 
     let src = await readFile(serverFilePath, 'utf-8');
-    expect(src).toContain("'/api/removeme'");
-    expect(src).toContain('ApiRemoveme');
+    let norm = src.replace(/['"]/g, '');
+    expect(norm).toContain('/api/removeme');
+    expect(norm).toContain('ApiRemoveme');
 
     // Delete it
     await fetch(`${server.url}/__mockr/endpoints`, {
@@ -810,9 +810,10 @@ const server = await mockr<Endpoints>({
     });
 
     src = await readFile(serverFilePath, 'utf-8');
+    norm = src.replace(/['"]/g, '');
     // Endpoint entry, type, and import should all be removed
-    expect(src).not.toContain("'/api/removeme'");
-    expect(src).not.toContain('ApiRemoveme');
+    expect(norm).not.toContain('/api/removeme');
+    expect(norm).not.toContain('ApiRemoveme');
   });
 
   // OPTIONS preflight on recorder routes

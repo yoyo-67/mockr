@@ -19,9 +19,13 @@ export function createMatcher(pattern: string | RegExp): MatchFn {
     };
   }
 
-  // Wildcard catch-all: convert ** to path-to-regexp syntax
-  if (pattern.includes('**')) {
-    const regexStr = '^' + pattern.replace(/\*\*/g, '.*') + '$';
+  // Wildcard patterns: * matches one segment, ** matches everything
+  if (pattern.includes('*')) {
+    const regexStr = '^' + pattern
+      .replace(/\*\*/g, '§GLOBSTAR§')     // protect ** first
+      .replace(/\*/g, '[^/]+')             // * = one path segment
+      .replace(/§GLOBSTAR§/g, '.*')        // ** = anything
+      + '$';
     const regex = new RegExp(regexStr);
     return (path: string) => {
       if (regex.test(path)) return { params: {} };
