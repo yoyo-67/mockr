@@ -300,6 +300,8 @@ function startNetworkListener() {
     request.getContent((content, _encoding) => {
       if (!isRecording) return;
       const body = content || "";
+      const isDup = entries.some((e) => e.url === url && e.method === method && Math.abs(e.timestamp - Date.now()) < 2e3);
+      if (isDup) return;
       const entry = {
         id: `mem-${++entryCounter}`,
         url,

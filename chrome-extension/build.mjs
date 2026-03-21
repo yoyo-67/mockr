@@ -25,6 +25,18 @@ const configs = [
     entryPoints: ['background/service-worker.ts'],
     outfile: 'background/service-worker.js',
   },
+  {
+    ...commonOptions,
+    format: 'iife',
+    entryPoints: ['content/intercept.ts'],
+    outfile: 'content/intercept.js',
+  },
+  {
+    ...commonOptions,
+    format: 'iife',
+    entryPoints: ['content/bridge.ts'],
+    outfile: 'content/bridge.js',
+  },
 ];
 
 if (watch) {

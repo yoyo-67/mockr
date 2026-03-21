@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["bridge.ts"],
+  "sourcesContent": ["// Content script: injects the intercept script into the page and relays messages to the service worker\n\n// Inject intercept.js into the page's main world (so it can override fetch/XHR)\nconst script = document.createElement('script');\nscript.src = chrome.runtime.getURL('content/intercept.js');\nscript.onload = () => script.remove();\n(document.head || document.documentElement).appendChild(script);\n\n// Relay captured entries from page \u2192 service worker\nwindow.addEventListener('message', (event) => {\n  if (event.source !== window || event.data?.type !== '__mockr_captured__') return;\n  chrome.runtime.sendMessage({ type: 'entry-captured', entry: event.data.entry }).catch(() => {});\n});\n"],
+  "mappings": ";;;AAGA,MAAM,SAAS,SAAS,cAAc,QAAQ;AAC9C,SAAO,MAAM,OAAO,QAAQ,OAAO,sBAAsB;AACzD,SAAO,SAAS,MAAM,OAAO,OAAO;AACpC,GAAC,SAAS,QAAQ,SAAS,iBAAiB,YAAY,MAAM;AAG9D,SAAO,iBAAiB,WAAW,CAAC,UAAU;AAC5C,QAAI,MAAM,WAAW,UAAU,MAAM,MAAM,SAAS,qBAAsB;AAC1E,WAAO,QAAQ,YAAY,EAAE,MAAM,kBAAkB,OAAO,MAAM,KAAK,MAAM,CAAC,EAAE,MAAM,MAAM;AAAA,IAAC,CAAC;AAAA,EAChG,CAAC;",
+  "names": []
+}

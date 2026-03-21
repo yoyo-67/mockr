@@ -262,6 +262,9 @@ function startNetworkListener() {
     request.getContent((content: string, _encoding: string) => {
       if (!isRecording) return;
       const body = content || '';
+      // Skip if we already have this URL+timestamp from background capture (within 2s)
+      const isDup = entries.some(e => e.url === url && e.method === method && Math.abs(e.timestamp - Date.now()) < 2000);
+      if (isDup) return;
       const entry: MemoryEntry = {
         id: `mem-${++entryCounter}`,
         url, method, status, contentType, responseHeaders, body,
