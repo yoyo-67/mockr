@@ -317,4 +317,319 @@ describe('Recorder integration (server routes)', () => {
     server = await mockr({ port: 0 });
     expect(server.recorder).toBeNull();
   });
+
+  // Inline entries (in-memory recording, no session)
+
+  it('maps inline entries (no session needed)', async () => {
+    await setup();
+
+    const mapRes = await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: [
+          { url: 'http://example.com/api/inline', method: 'GET', status: 200, contentType: 'application/json', body: '{"inline":true}' },
+        ],
+      }),
+    });
+    expect(mapRes.status).toBe(200);
+    const mapBody = await mapRes.json() as any;
+    expect(mapBody.mapped).toHaveLength(1);
+    expect(mapBody.mapped[0].url).toBe('/api/inline');
+
+    const res = await fetch(`${server.url}/api/inline`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ inline: true });
+  });
+
+  it('maps inline entries with multiple items', async () => {
+    await setup();
+
+    await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: [
+          { url: 'http://example.com/api/a', method: 'GET', status: 200, contentType: 'application/json', body: '"aaa"' },
+          { url: 'http://example.com/api/b', method: 'POST', status: 201, contentType: 'application/json', body: '"bbb"' },
+        ],
+      }),
+    });
+
+    const a = await fetch(`${server.url}/api/a`);
+    expect(await a.json()).toBe('aaa');
+
+    const b = await fetch(`${server.url}/api/b`, { method: 'POST' });
+    expect(await b.json()).toBe('bbb');
+  });
+
+  it('returns 400 when neither entries nor sessionId provided', async () => {
+    await setup();
+    const res = await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  // GET /__mockr/endpoints
+
+  it('GET /__mockr/endpoints lists all endpoints with type', async () => {
+    await setup();
+
+    const res = await fetch(`${server.url}/__mockr/endpoints`);
+    expect(res.status).toBe(200);
+    const eps = await res.json() as any[];
+    const existing = eps.find((e: any) => e.url === '/api/existing');
+    expect(existing).toBeTruthy();
+    expect(existing.type).toBe('static');
+    expect(existing.enabled).toBe(true);
+  });
+
+  // PATCH /__mockr/endpoints — update URL
+
+  it('PATCH /__mockr/endpoints updates endpoint URL', async () => {
+    await setup();
+
+    await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: [{ url: 'http://example.com/api/original', method: 'GET', status: 200, contentType: 'application/json', body: '"orig"' }],
+      }),
+    });
+
+    // Rename URL
+    const patchRes = await fetch(`${server.url}/__mockr/endpoints`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldUrl: '/api/original', newUrl: '/api/renamed' }),
+    });
+    expect(patchRes.status).toBe(200);
+
+    // Old URL should 404
+    const oldRes = await fetch(`${server.url}/api/original`);
+    expect(oldRes.status).toBe(404);
+
+    // New URL should work
+    const newRes = await fetch(`${server.url}/api/renamed`);
+    expect(newRes.status).toBe(200);
+    expect(await newRes.json()).toBe('orig');
+  });
+
+  it('PATCH /__mockr/endpoints returns 404 for unknown URL', async () => {
+    await setup();
+    const res = await fetch(`${server.url}/__mockr/endpoints`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldUrl: '/nonexistent', newUrl: '/new' }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  // POST /__mockr/endpoints/toggle
+
+  it('POST /__mockr/endpoints/toggle disables and re-enables endpoint', async () => {
+    await setup();
+
+    // Disable
+    await fetch(`${server.url}/__mockr/endpoints/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: '/api/existing', enabled: false }),
+    });
+
+    const disabledRes = await fetch(`${server.url}/api/existing`);
+    expect(disabledRes.status).toBe(404);
+
+    // Re-enable
+    await fetch(`${server.url}/__mockr/endpoints/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: '/api/existing', enabled: true }),
+    });
+
+    const enabledRes = await fetch(`${server.url}/api/existing`);
+    expect(enabledRes.status).toBe(200);
+  });
+
+  // PATCH /__mockr/endpoints/type
+
+  it('changes static endpoint to handler', async () => {
+    await setup();
+
+    await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: [{ url: 'http://example.com/api/to-handler', method: 'GET', status: 200, contentType: 'application/json', body: '{"val":1}' }],
+      }),
+    });
+
+    // Verify it starts as static
+    let eps = await (await fetch(`${server.url}/__mockr/endpoints`)).json() as any[];
+    expect(eps.find((e: any) => e.url === '/api/to-handler').type).toBe('static');
+
+    // Change to handler
+    const typeRes = await fetch(`${server.url}/__mockr/endpoints/type`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: '/api/to-handler', type: 'handler' }),
+    });
+    expect(typeRes.status).toBe(200);
+
+    // Verify it's now a handler
+    eps = await (await fetch(`${server.url}/__mockr/endpoints`)).json() as any[];
+    expect(eps.find((e: any) => e.url === '/api/to-handler').type).toBe('handler');
+
+    // Should still serve the body
+    const dataRes = await fetch(`${server.url}/api/to-handler`);
+    expect(dataRes.status).toBe(200);
+    expect(await dataRes.json()).toEqual({ val: 1 });
+  });
+
+  it('changes handler endpoint back to static', async () => {
+    await setup();
+
+    await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: [{ url: 'http://example.com/api/back-static', method: 'GET', status: 200, contentType: 'application/json', body: '{"x":2}' }],
+      }),
+    });
+
+    // Convert to handler then back to static
+    await fetch(`${server.url}/__mockr/endpoints/type`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: '/api/back-static', type: 'handler' }),
+    });
+    await fetch(`${server.url}/__mockr/endpoints/type`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: '/api/back-static', type: 'static' }),
+    });
+
+    const eps = await (await fetch(`${server.url}/__mockr/endpoints`)).json() as any[];
+    expect(eps.find((e: any) => e.url === '/api/back-static').type).toBe('static');
+
+    const res = await fetch(`${server.url}/api/back-static`);
+    expect(await res.json()).toEqual({ x: 2 });
+  });
+
+  it('changes static endpoint to data when body is array', async () => {
+    await setup();
+
+    await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: [{ url: 'http://example.com/api/to-data', method: 'GET', status: 200, contentType: 'application/json', body: '[{"id":1},{"id":2}]' }],
+      }),
+    });
+
+    // Change to data
+    await fetch(`${server.url}/__mockr/endpoints/type`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: '/api/to-data', type: 'data' }),
+    });
+
+    const eps = await (await fetch(`${server.url}/__mockr/endpoints`)).json() as any[];
+    const ep = eps.find((e: any) => e.url === '/api/to-data');
+    expect(ep.type).toBe('data');
+    expect(ep.itemCount).toBe(2);
+
+    // Should support CRUD — GET list
+    const listRes = await fetch(`${server.url}/api/to-data`);
+    expect(await listRes.json()).toEqual([{ id: 1 }, { id: 2 }]);
+
+    // POST to add
+    const postRes = await fetch(`${server.url}/api/to-data`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 3, name: 'new' }),
+    });
+    expect(postRes.status).toBe(201);
+  });
+
+  it('returns 404 when changing type of nonexistent endpoint', async () => {
+    await setup();
+    const res = await fetch(`${server.url}/__mockr/endpoints/type`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: '/nope', type: 'handler' }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  // DELETE /__mockr/endpoints
+
+  it('DELETE /__mockr/endpoints removes an endpoint', async () => {
+    await setup();
+
+    await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: [{ url: 'http://example.com/api/deleteme', method: 'GET', status: 200, contentType: 'application/json', body: '"bye"' }],
+      }),
+    });
+
+    // Verify it exists
+    const before = await fetch(`${server.url}/api/deleteme`);
+    expect(before.status).toBe(200);
+
+    // Delete it
+    const delRes = await fetch(`${server.url}/__mockr/endpoints`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: '/api/deleteme' }),
+    });
+    expect(delRes.status).toBe(200);
+
+    // Should be gone
+    const after = await fetch(`${server.url}/api/deleteme`);
+    expect(after.status).toBe(404);
+  });
+
+  it('DELETE /__mockr/endpoints returns 404 for unknown', async () => {
+    await setup();
+    const res = await fetch(`${server.url}/__mockr/endpoints`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: '/nope' }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  // OPTIONS preflight on recorder routes
+
+  it('OPTIONS returns CORS headers on /__mockr routes', async () => {
+    await setup();
+    const res = await fetch(`${server.url}/__mockr/endpoints`, { method: 'OPTIONS' });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+  });
+
+  // Unknown routes catch-all
+
+  it('unknown /__mockr routes return 404 not proxy', async () => {
+    sessionsDir = await mkdtemp(join(tmpdir(), 'mockr-rec-'));
+    mocksDir = await mkdtemp(join(tmpdir(), 'mockr-mocks-'));
+    const target = await mockr({ port: 0, endpoints: [{ url: '/x', body: 'proxy' }] });
+    server = await mockr({
+      port: 0,
+      recorder: { sessionsDir, mocksDir },
+      proxy: { target: target.url },
+    });
+
+    const res = await fetch(`${server.url}/__mockr/unknown-route`);
+    expect(res.status).toBe(404);
+    const body = await res.json() as any;
+    expect(body.error).toContain('Unknown recorder route');
+    await target.close();
+  });
 });

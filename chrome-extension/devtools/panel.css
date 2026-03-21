@@ -163,6 +163,32 @@ header h1 {
   border-bottom: 1px solid #eee;
 }
 
+.type-filters {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.type-filter {
+  padding: 2px 10px;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  background: #fff;
+  font-size: 10px;
+  cursor: pointer;
+  color: #666;
+}
+
+.type-filter:hover {
+  background: #f0f0f0;
+}
+
+.type-filter.active {
+  background: #6d28d9;
+  color: #fff;
+  border-color: #6d28d9;
+}
+
 .filter-bar input {
   width: 100%;
   padding: 4px 8px;
@@ -241,4 +267,62 @@ tr:hover td {
 
 .col-check input[type="checkbox"] {
   cursor: pointer;
+}
+
+.editable-url {
+  max-width: none;
+}
+
+.url-input {
+  width: 100%;
+  font-size: 11px;
+  font-family: monospace;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.url-input:hover {
+  border-color: #ddd;
+}
+
+.url-input:focus {
+  border-color: #6d28d9;
+  background: #fff;
+  outline: none;
+}
+
+.btn-save-url {
+  font-size: 10px;
+  padding: 2px 8px;
+  color: #6d28d9;
+  border-color: #6d28d9;
+}
+
+.type-select {
+  font-size: 10px;
+  padding: 1px 4px;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.type-select:focus {
+  border-color: #6d28d9;
+  outline: none;
+}
+
+.body-file {
+  font-size: 9px;
+  color: #999;
+  margin-left: 6px;
+  font-family: monospace;
+}
+
+.actions-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }

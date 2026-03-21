@@ -10,7 +10,7 @@
       <h1>mockr</h1>
       <div class="server-config">
         <label>Server:</label>
-        <input type="text" id="server-url" value="http://localhost:3210" />
+        <input type="text" id="server-url" value="http://localhost:4000" />
       </div>
     </header>
 
@@ -26,10 +26,21 @@
     <div class="tabs">
       <button class="tab active" data-tab="recording">Recording</button>
       <button class="tab" data-tab="sessions">Sessions</button>
+      <button class="tab" data-tab="mocked">Mocked</button>
     </div>
 
     <div id="tab-recording" class="tab-content active">
       <div class="filter-bar">
+        <div class="type-filters">
+          <button class="type-filter active" data-type="xhr">XHR</button>
+          <button class="type-filter" data-type="js">JS</button>
+          <button class="type-filter" data-type="css">CSS</button>
+          <button class="type-filter" data-type="img">Img</button>
+          <button class="type-filter" data-type="font">Font</button>
+          <button class="type-filter" data-type="doc">Doc</button>
+          <button class="type-filter" data-type="other">Other</button>
+          <button class="type-filter" data-type="all">All</button>
+        </div>
         <input type="text" id="filter-input" placeholder="Filter by URL..." />
       </div>
       <table id="entries-table">
@@ -59,6 +70,22 @@
           </tr>
         </thead>
         <tbody id="sessions-body"></tbody>
+      </table>
+    </div>
+    <div id="tab-mocked" class="tab-content">
+      <button id="btn-refresh-mocked" class="btn" style="margin: 8px 12px;">Refresh</button>
+      <table id="mocked-table">
+        <thead>
+          <tr>
+            <th>Enabled</th>
+            <th>Method</th>
+            <th>URL Pattern</th>
+            <th>Type</th>
+            <th></th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="mocked-body"></tbody>
       </table>
     </div>
   </div>

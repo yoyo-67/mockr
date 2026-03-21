@@ -110,7 +110,7 @@ export interface MockrConfig<TEndpoints = Record<string, unknown>> {
   fixtureFile?: string;
   proxy?: { target: string; targets?: Record<string, string> };
   tui?: boolean;
-  recorder?: { sessionsDir?: string; mocksDir?: string };
+  recorder?: { sessionsDir?: string; mocksDir?: string; serverFile?: string };
 }
 
 export interface EndpointInfo {

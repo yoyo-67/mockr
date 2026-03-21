@@ -67,7 +67,46 @@ export class MockrApi {
     });
   }
 
+  async mapEntries(entries: Array<{ url: string; method: string; status: number; contentType: string; body: string }>): Promise<MapResult> {
+    return this.request('/__mockr/map', {
+      method: 'POST',
+      body: JSON.stringify({ entries }),
+    });
+  }
+
   async getMappedEndpoints(): Promise<Array<{ url: string; method: string; enabled: boolean }>> {
     return this.request('/__mockr/map/endpoints');
+  }
+
+  async listEndpoints(): Promise<Array<{ url: string; method: string; type: string; enabled: boolean; itemCount: number | null; bodyFile?: string }>> {
+    return this.request('/__mockr/endpoints');
+  }
+
+  async updateEndpointUrl(oldUrl: string, newUrl: string, method?: string): Promise<void> {
+    await this.request('/__mockr/endpoints', {
+      method: 'PATCH',
+      body: JSON.stringify({ oldUrl, newUrl, method }),
+    });
+  }
+
+  async updateEndpointType(url: string, type: string, method?: string): Promise<void> {
+    await this.request('/__mockr/endpoints/type', {
+      method: 'PATCH',
+      body: JSON.stringify({ url, type, method }),
+    });
+  }
+
+  async deleteEndpoint(url: string, method?: string): Promise<void> {
+    await this.request('/__mockr/endpoints', {
+      method: 'DELETE',
+      body: JSON.stringify({ url, method }),
+    });
+  }
+
+  async toggleEndpoint(url: string, enabled: boolean, method?: string): Promise<void> {
+    await this.request('/__mockr/endpoints/toggle', {
+      method: 'POST',
+      body: JSON.stringify({ url, enabled, method }),
+    });
   }
 }

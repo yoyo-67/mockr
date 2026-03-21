@@ -23,48 +23,82 @@ var MockrApi = class {
       body: JSON.stringify({ name, baseUrl })
     });
   }
-  async recordEntry(sessionId2, entry) {
+  async recordEntry(sessionId, entry) {
     return this.request("/__mockr/record", {
       method: "POST",
-      body: JSON.stringify({ sessionId: sessionId2, ...entry })
+      body: JSON.stringify({ sessionId, ...entry })
     });
   }
-  async stopRecording(sessionId2) {
+  async stopRecording(sessionId) {
     return this.request("/__mockr/record/stop", {
       method: "POST",
-      body: JSON.stringify({ sessionId: sessionId2 })
+      body: JSON.stringify({ sessionId })
     });
   }
   async listSessions() {
     return this.request("/__mockr/sessions");
   }
-  async getSession(sessionId2) {
-    return this.request(`/__mockr/sessions/${sessionId2}`);
+  async getSession(sessionId) {
+    return this.request(`/__mockr/sessions/${sessionId}`);
   }
-  async deleteSession(sessionId2) {
-    await this.request(`/__mockr/sessions/${sessionId2}`, { method: "DELETE" });
+  async deleteSession(sessionId) {
+    await this.request(`/__mockr/sessions/${sessionId}`, { method: "DELETE" });
   }
-  async mapToMockr(sessionId2, entryIds, options) {
+  async mapToMockr(sessionId, entryIds, options) {
     return this.request("/__mockr/map", {
       method: "POST",
-      body: JSON.stringify({ sessionId: sessionId2, entryIds, generateTypes: options?.generateTypes })
+      body: JSON.stringify({ sessionId, entryIds, generateTypes: options?.generateTypes })
+    });
+  }
+  async mapEntries(entries2) {
+    return this.request("/__mockr/map", {
+      method: "POST",
+      body: JSON.stringify({ entries: entries2 })
     });
   }
   async getMappedEndpoints() {
     return this.request("/__mockr/map/endpoints");
   }
+  async listEndpoints() {
+    return this.request("/__mockr/endpoints");
+  }
+  async updateEndpointUrl(oldUrl, newUrl, method) {
+    await this.request("/__mockr/endpoints", {
+      method: "PATCH",
+      body: JSON.stringify({ oldUrl, newUrl, method })
+    });
+  }
+  async updateEndpointType(url, type, method) {
+    await this.request("/__mockr/endpoints/type", {
+      method: "PATCH",
+      body: JSON.stringify({ url, type, method })
+    });
+  }
+  async deleteEndpoint(url, method) {
+    await this.request("/__mockr/endpoints", {
+      method: "DELETE",
+      body: JSON.stringify({ url, method })
+    });
+  }
+  async toggleEndpoint(url, enabled, method) {
+    await this.request("/__mockr/endpoints/toggle", {
+      method: "POST",
+      body: JSON.stringify({ url, enabled, method })
+    });
+  }
 };
 
 // devtools/panel.ts
 var api;
-var sessionId = null;
-var isRecording = false;
+var isRecording = true;
 var entries = [];
 var totalSize = 0;
 var sortKey = "timestamp";
 var sortAsc = true;
 var filterText = "";
+var activeTypeFilter = "xhr";
 var selectedEntries = /* @__PURE__ */ new Set();
+var entryCounter = 0;
 var serverUrlInput = document.getElementById("server-url");
 var btnRecord = document.getElementById("btn-record");
 var btnStop = document.getElementById("btn-stop");
@@ -96,47 +130,44 @@ document.querySelectorAll(".tab").forEach((tab) => {
     const tabName = tab.dataset.tab;
     document.getElementById(`tab-${tabName}`).classList.add("active");
     if (tabName === "sessions") loadSessions();
+    if (tabName === "mocked") loadMockedEndpoints();
   });
 });
-btnRecord.addEventListener("click", async () => {
-  if (isRecording) return;
-  try {
-    const name = `recording-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 19).replace(/[T:]/g, "-")}`;
-    const baseUrl = await getPageUrl();
-    const result = await api.startRecording(name, baseUrl);
-    sessionId = result.sessionId;
-    isRecording = true;
-    entries = [];
-    totalSize = 0;
-    selectedEntries.clear();
-    updateUI();
-    startNetworkListener();
-  } catch (err) {
-    statusEl.textContent = `Error: ${err.message}`;
-  }
+btnRecord.addEventListener("click", () => {
+  isRecording = true;
+  entries = [];
+  totalSize = 0;
+  selectedEntries.clear();
+  startNetworkListener();
+  updateUI();
 });
-btnStop.addEventListener("click", async () => {
-  if (!isRecording || !sessionId) return;
-  try {
-    stopNetworkListener();
-    await api.stopRecording(sessionId);
-    isRecording = false;
-    updateUI();
-    statusEl.textContent = `Saved ${entries.length} entries`;
-  } catch (err) {
-    statusEl.textContent = `Error: ${err.message}`;
-  }
+btnStop.addEventListener("click", () => {
+  isRecording = false;
+  stopNetworkListener();
+  updateUI();
+  statusEl.textContent = `${entries.length} entries captured`;
 });
 btnMap.addEventListener("click", async () => {
-  if (selectedEntries.size === 0 || !sessionId) return;
+  if (selectedEntries.size === 0) return;
   try {
     btnMap.disabled = true;
     btnMap.textContent = "Mapping...";
-    const entryIds = [...selectedEntries];
-    const result = await api.mapToMockr(sessionId, entryIds);
+    const selected = entries.filter((e) => selectedEntries.has(e.id));
+    const result = await api.mapEntries(selected.map((e) => ({
+      url: e.url,
+      method: e.method,
+      status: e.status,
+      contentType: e.contentType,
+      body: e.body
+    })));
     statusEl.textContent = `Mapped ${result.mapped.length} endpoints`;
     btnMap.textContent = "Map to mockr";
     updateUI();
+    document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach((tc) => tc.classList.remove("active"));
+    document.querySelector('[data-tab="mocked"]').classList.add("active");
+    document.getElementById("tab-mocked").classList.add("active");
+    loadMockedEndpoints();
   } catch (err) {
     statusEl.textContent = `Map error: ${err.message}`;
     btnMap.textContent = "Map to mockr";
@@ -144,11 +175,9 @@ btnMap.addEventListener("click", async () => {
   }
 });
 btnSelectAllApi.addEventListener("click", () => {
-  const apiEntries = entries.filter(
-    (e) => e.url.includes("/api/") && e.method === "GET" && e.status >= 200 && e.status < 400
-  );
+  const filtered = getFilteredEntries();
   selectedEntries.clear();
-  for (const e of apiEntries) selectedEntries.add(e.id);
+  for (const e of filtered) selectedEntries.add(e.id);
   renderEntries();
   updateUI();
 });
@@ -178,6 +207,14 @@ document.querySelectorAll("th.sortable").forEach((th) => {
     renderEntries();
   });
 });
+document.querySelectorAll(".type-filter").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".type-filter").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    activeTypeFilter = btn.dataset.type;
+    renderEntries();
+  });
+});
 btnRefreshSessions.addEventListener("click", loadSessions);
 async function loadSessions() {
   try {
@@ -196,12 +233,9 @@ function renderSessions(sessions) {
       <td>${s.entryCount}</td>
       <td>${new Date(s.startedAt).toLocaleString()}</td>
       <td class="sessions-actions">
-        <button class="btn btn-map" data-session-id="${s.id}">View & Map</button>
         <button class="btn btn-delete" data-session-id="${s.id}">Delete</button>
       </td>
     `;
-    const mapBtn = tr.querySelector(".btn-map");
-    mapBtn.addEventListener("click", () => loadSessionEntries(s.id));
     const deleteBtn = tr.querySelector(".btn-delete");
     deleteBtn.addEventListener("click", async () => {
       await api.deleteSession(s.id);
@@ -210,59 +244,47 @@ function renderSessions(sessions) {
     sessionsBody.appendChild(tr);
   }
 }
-async function loadSessionEntries(sid) {
-  try {
-    const session = await api.getSession(sid);
-    sessionId = sid;
-    entries = session.entries;
-    totalSize = entries.reduce((sum, e) => sum + e.size, 0);
-    selectedEntries.clear();
-    isRecording = false;
-    document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
-    document.querySelectorAll(".tab-content").forEach((tc) => tc.classList.remove("active"));
-    document.querySelector('[data-tab="recording"]').classList.add("active");
-    document.getElementById("tab-recording").classList.add("active");
-    renderEntries();
-    updateUI();
-    statusEl.textContent = `Loaded session: ${session.name} (${entries.length} entries)`;
-  } catch (err) {
-    statusEl.textContent = `Error: ${err.message}`;
-  }
-}
 var networkListener = null;
+function isXhr(mimeType, url) {
+  const ct = mimeType.toLowerCase();
+  const u = url.toLowerCase();
+  if (ct.includes("image") || u.endsWith(".svg")) return false;
+  return ct.includes("json") || ct.includes("xml") || ct.includes("text/plain") || u.includes("/api/");
+}
 function startNetworkListener() {
+  if (networkListener) return;
   networkListener = (request) => {
-    if (!isRecording || !sessionId) return;
-    const entry = request;
-    const url = entry.request.url;
-    const method = entry.request.method;
-    const status = entry.response.status;
-    const contentType = entry.response.content.mimeType || "application/octet-stream";
-    const timing = entry.time || 0;
+    if (!isRecording) return;
+    const url = request.request.url;
+    const method = request.request.method;
+    const status = request.response.status;
+    const contentType = request.response.content.mimeType || "application/octet-stream";
+    const timing = request.time || 0;
+    if (!isXhr(contentType, url)) return;
     const responseHeaders = {};
-    for (const h of entry.response.headers) {
+    for (const h of request.response.headers) {
       responseHeaders[h.name.toLowerCase()] = h.value;
     }
-    entry.getContent((content, _encoding) => {
-      if (!isRecording || !sessionId) return;
+    request.getContent((content, _encoding) => {
+      if (!isRecording) return;
       const body = content || "";
-      const sid = sessionId;
-      api.recordEntry(sid, {
+      const id = `mem-${++entryCounter}`;
+      const entry = {
+        id,
         url,
         method,
         status,
         contentType,
         responseHeaders,
         body,
-        timing
-      }).then((recorded) => {
-        entries.push(recorded);
-        totalSize += recorded.size;
-        renderEntries();
-        updateTotalSize();
-      }).catch((err) => {
-        console.error("[mockr] Failed to record entry:", err);
-      });
+        size: body.length,
+        timing,
+        timestamp: Date.now()
+      };
+      entries.push(entry);
+      totalSize += entry.size;
+      renderEntries();
+      updateTotalSize();
     });
   };
   chrome.devtools.network.onRequestFinished.addListener(networkListener);
@@ -273,20 +295,55 @@ function stopNetworkListener() {
     networkListener = null;
   }
 }
+function matchesTypeFilter(e) {
+  if (activeTypeFilter === "all") return true;
+  const ct = e.contentType.toLowerCase();
+  const url = e.url.toLowerCase();
+  switch (activeTypeFilter) {
+    case "xhr":
+      return isXhr(ct, url);
+    case "js":
+      return ct.includes("javascript") || url.endsWith(".js");
+    case "css":
+      return ct.includes("css") || url.endsWith(".css");
+    case "img":
+      return ct.includes("image") || /\.(png|jpg|jpeg|gif|svg|webp|ico)(\?|$)/i.test(url);
+    case "font":
+      return ct.includes("font") || /\.(woff|woff2|ttf|otf|eot)(\?|$)/i.test(url);
+    case "doc":
+      return ct.includes("html");
+    case "other": {
+      const types = ["xhr", "js", "css", "img", "font", "doc"];
+      return !types.some((t) => {
+        const prev = activeTypeFilter;
+        activeTypeFilter = t;
+        const m = matchesTypeFilter(e);
+        activeTypeFilter = prev;
+        return m;
+      });
+    }
+    default:
+      return true;
+  }
+}
 function getFilteredEntries() {
-  return filterText ? entries.filter((e) => e.url.toLowerCase().includes(filterText)) : entries;
+  let filtered = entries.filter(matchesTypeFilter);
+  if (filterText) {
+    filtered = filtered.filter((e) => e.url.toLowerCase().includes(filterText));
+  }
+  return filtered;
 }
 function updateUI() {
   btnRecord.disabled = isRecording;
   btnRecord.classList.toggle("recording", isRecording);
   btnStop.disabled = !isRecording;
-  btnMap.disabled = selectedEntries.size === 0 || !sessionId;
+  btnMap.disabled = selectedEntries.size === 0;
   if (isRecording) {
     statusEl.textContent = `Recording... (${entries.length} entries)`;
     statusEl.className = "status recording";
-  } else if (statusEl.className !== "status") {
   } else {
-    statusEl.textContent = entries.length > 0 ? `${entries.length} entries` : "Idle";
+    statusEl.textContent = entries.length > 0 ? `${entries.length} entries captured` : "Idle";
+    statusEl.className = "status";
   }
   updateTotalSize();
 }
@@ -326,11 +383,8 @@ function renderEntries() {
     `;
     const checkbox = tr.querySelector('input[type="checkbox"]');
     checkbox.addEventListener("change", () => {
-      if (checkbox.checked) {
-        selectedEntries.add(e.id);
-      } else {
-        selectedEntries.delete(e.id);
-      }
+      if (checkbox.checked) selectedEntries.add(e.id);
+      else selectedEntries.delete(e.id);
       updateUI();
     });
     entriesBody.appendChild(tr);
@@ -348,11 +402,91 @@ function truncateUrl(url) {
     return url;
   }
 }
-function getPageUrl() {
-  return new Promise((resolve) => {
-    chrome.devtools.inspectedWindow.eval("location.origin", (result) => {
-      resolve(result || "");
-    });
-  });
+var mockedBody = document.getElementById("mocked-body");
+var btnRefreshMocked = document.getElementById("btn-refresh-mocked");
+btnRefreshMocked.addEventListener("click", loadMockedEndpoints);
+async function loadMockedEndpoints() {
+  try {
+    const endpoints = await api.listEndpoints();
+    renderMockedEndpoints(endpoints);
+  } catch (err) {
+    mockedBody.innerHTML = `<tr><td colspan="5">Error: ${err.message}</td></tr>`;
+  }
 }
+function renderMockedEndpoints(eps) {
+  mockedBody.innerHTML = "";
+  for (const ep of eps) {
+    const tr = document.createElement("tr");
+    const methodClass = `method-${ep.method.toLowerCase()}`;
+    tr.innerHTML = `
+      <td class="col-check"><input type="checkbox" ${ep.enabled ? "checked" : ""} /></td>
+      <td class="${methodClass}">${ep.method}</td>
+      <td class="editable-url">
+        <input type="text" class="url-input" value="${escapeHtml(ep.url)}" />
+      </td>
+      <td>
+        <select class="type-select">
+          <option value="static" ${ep.type === "static" ? "selected" : ""}>static</option>
+          <option value="handler" ${ep.type === "handler" ? "selected" : ""}>handler</option>
+          <option value="data" ${ep.type === "data" ? "selected" : ""}>data</option>
+        </select>
+      </td>
+      <td class="actions-cell">
+        <button class="btn btn-save-url" style="display:none;">Save</button>
+        ${ep.bodyFile ? `<span class="body-file" title="${escapeHtml(ep.bodyFile)}">${ep.bodyFile.split("/").pop()}</span>` : ""}
+      </td>
+      <td><button class="btn btn-delete btn-delete-ep">x</button></td>
+    `;
+    const toggle = tr.querySelector('input[type="checkbox"]');
+    toggle.addEventListener("change", async () => {
+      await api.toggleEndpoint(ep.url, toggle.checked, ep.method);
+      ep.enabled = toggle.checked;
+    });
+    const typeSelect = tr.querySelector(".type-select");
+    typeSelect.addEventListener("change", async () => {
+      try {
+        await api.updateEndpointType(ep.url, typeSelect.value, ep.method);
+        ep.type = typeSelect.value;
+        statusEl.textContent = `${ep.url} \u2192 ${typeSelect.value}`;
+      } catch (err) {
+        statusEl.textContent = `Error: ${err.message}`;
+        typeSelect.value = ep.type;
+      }
+    });
+    const urlInput = tr.querySelector(".url-input");
+    const saveBtn = tr.querySelector(".btn-save-url");
+    const originalUrl = ep.url;
+    urlInput.addEventListener("input", () => {
+      saveBtn.style.display = urlInput.value !== originalUrl ? "" : "none";
+    });
+    saveBtn.addEventListener("click", async () => {
+      const newUrl = urlInput.value.trim();
+      if (!newUrl || newUrl === originalUrl) return;
+      try {
+        await api.updateEndpointUrl(originalUrl, newUrl, ep.method);
+        ep.url = newUrl;
+        saveBtn.style.display = "none";
+        statusEl.textContent = `Updated: ${originalUrl} \u2192 ${newUrl}`;
+      } catch (err) {
+        statusEl.textContent = `Error: ${err.message}`;
+      }
+    });
+    urlInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") saveBtn.click();
+    });
+    const deleteBtn = tr.querySelector(".btn-delete-ep");
+    deleteBtn.addEventListener("click", async () => {
+      try {
+        await api.deleteEndpoint(ep.url, ep.method);
+        tr.remove();
+        statusEl.textContent = `Deleted: ${ep.url}`;
+      } catch (err) {
+        statusEl.textContent = `Error: ${err.message}`;
+      }
+    });
+    mockedBody.appendChild(tr);
+  }
+}
+startNetworkListener();
+updateUI();
 //# sourceMappingURL=panel.js.map
