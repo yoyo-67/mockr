@@ -22,6 +22,7 @@ export interface InternalEndpoint {
   disabled: boolean;
   handlerFn: ((req: MockrRequest, ctx: HandlerContext<any>) => HandlerResult | Promise<HandlerResult>) | null;
   schemas: { body?: ParseableSchema; query?: ParseableSchema; params?: ParseableSchema } | null;
+  filePath?: string;
 }
 
 interface ControlRoutesConfig {
@@ -141,6 +142,7 @@ export async function handleControlRoute(
       type: ep.isData ? 'data' : ep.isHandler ? 'handler' : 'static',
       enabled: !ep.disabled,
       itemCount: ep.isData ? (ep.handle.data as unknown[]).length : null,
+      filePath: ep.filePath || null,
     }));
     sendCorsJson(res, 200, list);
     return true;
@@ -378,6 +380,7 @@ async function handleMap(
           handlerFn: null,
           schemas: null,
           disabled: false,
+          filePath: bodyFilePath,
         });
       } else {
         const handle = createEndpointHandle([], pathname);
@@ -395,6 +398,7 @@ async function handleMap(
           handlerFn: null,
           schemas: null,
           disabled: false,
+          filePath: bodyFilePath,
         });
       }
     }

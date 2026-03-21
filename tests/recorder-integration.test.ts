@@ -946,27 +946,63 @@ const server = await mockr({
     expect(handle.count()).toBe(2);
   });
 
-  it("static endpoint .body is the object", async () => {
+  it('object endpoint supports GET, PATCH, PUT, DELETE', async () => {
     await setup();
 
-    // Map an object response
     await fetch(`${server.url}/__mockr/map`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        entries: [
-          {
-            url: "http://example.com/api/obj-resp",
-            method: "GET",
-            status: 200,
-            contentType: "application/json",
-            body: '{"projects":[{"id":1}]}',
-          },
-        ],
+        entries: [{ url: 'http://example.com/api/settings', method: 'GET', status: 200, contentType: 'application/json', body: '{"theme":"dark","lang":"en"}' }],
       }),
     });
 
-    const handle = server.endpoint("/api/obj-resp");
+    // GET returns the object
+    const r1 = await fetch(`${server.url}/api/settings`);
+    expect(await r1.json()).toEqual({ theme: 'dark', lang: 'en' });
+
+    // PATCH merges fields
+    const r2 = await fetch(`${server.url}/api/settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme: 'light' }),
+    });
+    expect(r2.status).toBe(200);
+    expect(await r2.json()).toEqual({ theme: 'light', lang: 'en' });
+
+    // GET reflects the patch
+    const r3 = await fetch(`${server.url}/api/settings`);
+    expect(await r3.json()).toEqual({ theme: 'light', lang: 'en' });
+
+    // PUT replaces entirely
+    const r4 = await fetch(`${server.url}/api/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme: 'blue' }),
+    });
+    expect(r4.status).toBe(200);
+    expect(await r4.json()).toEqual({ theme: 'blue' });
+
+    // DELETE resets to empty
+    const r5 = await fetch(`${server.url}/api/settings`, { method: 'DELETE' });
+    expect(r5.status).toBe(200);
+
+    const r6 = await fetch(`${server.url}/api/settings`);
+    expect(await r6.json()).toEqual({});
+  });
+
+  it('object endpoint body is accessible via handle', async () => {
+    await setup();
+
+    await fetch(`${server.url}/__mockr/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: [{ url: 'http://example.com/api/obj-resp', method: 'GET', status: 200, contentType: 'application/json', body: '{"projects":[{"id":1}]}' }],
+      }),
+    });
+
+    const handle = server.endpoint('/api/obj-resp');
     expect(handle.body).toEqual({ projects: [{ id: 1 }] });
   });
 

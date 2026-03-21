@@ -329,7 +329,24 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       }
 
       if (ep.isStatic) {
-        handlerResult = { status: ep.handle.response.status, body: ep.handle.response.body, headers: ep.handle.response.headers };
+        if (method === 'GET') {
+          handlerResult = { status: ep.handle.response.status, body: ep.handle.response.body, headers: ep.handle.response.headers };
+        } else if (method === 'PATCH' && typeof ep.handle.body === 'object' && ep.handle.body !== null) {
+          const patched = { ...(ep.handle.body as Record<string, unknown>), ...(body as Record<string, unknown>) };
+          ep.handle.body = patched;
+          ep.handle.response = { ...ep.handle.response, body: patched };
+          handlerResult = { status: 200, body: patched };
+        } else if (method === 'PUT') {
+          ep.handle.body = body;
+          ep.handle.response = { ...ep.handle.response, body };
+          handlerResult = { status: 200, body };
+        } else if (method === 'DELETE') {
+          ep.handle.body = {};
+          ep.handle.response = { ...ep.handle.response, body: {} };
+          handlerResult = { status: 200, body: { deleted: true } };
+        } else {
+          handlerResult = { status: ep.handle.response.status, body: ep.handle.response.body, headers: ep.handle.response.headers };
+        }
         source = 'mock';
         break;
       }

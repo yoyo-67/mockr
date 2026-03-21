@@ -96,14 +96,16 @@ var totalSize = 0;
 var sortKey = "timestamp";
 var sortAsc = true;
 var filterText = "";
-var activeTypeFilter = "xhr";
+var activeMethodFilter = "all";
 var selectedEntries = /* @__PURE__ */ new Set();
 var entryCounter = 0;
+var expandedEntryId = null;
 var serverUrlInput = document.getElementById("server-url");
 var btnRecord = document.getElementById("btn-record");
 var btnStop = document.getElementById("btn-stop");
 var btnMap = document.getElementById("btn-map");
-var btnSelectAllApi = document.getElementById("btn-select-all");
+var btnClear = document.getElementById("btn-clear");
+var preserveLogsCheckbox = document.getElementById("preserve-logs");
 var statusEl = document.getElementById("status");
 var totalSizeEl = document.getElementById("total-size");
 var entriesBody = document.getElementById("entries-body");
@@ -111,6 +113,10 @@ var filterInput = document.getElementById("filter-input");
 var sessionsBody = document.getElementById("sessions-body");
 var btnRefreshSessions = document.getElementById("btn-refresh-sessions");
 var checkAll = document.getElementById("check-all");
+var entryDetail = document.getElementById("entry-detail");
+var detailTitle = document.getElementById("detail-title");
+var detailBody = document.getElementById("detail-body");
+var detailClose = document.getElementById("detail-close");
 api = new MockrApi(serverUrlInput.value);
 serverUrlInput.addEventListener("change", () => {
   api.setServerUrl(serverUrlInput.value);
@@ -138,6 +144,7 @@ btnRecord.addEventListener("click", () => {
   entries = [];
   totalSize = 0;
   selectedEntries.clear();
+  closeDetail();
   startNetworkListener();
   updateUI();
 });
@@ -146,6 +153,24 @@ btnStop.addEventListener("click", () => {
   stopNetworkListener();
   updateUI();
   statusEl.textContent = `${entries.length} entries captured`;
+});
+btnClear.addEventListener("click", () => {
+  entries = [];
+  totalSize = 0;
+  selectedEntries.clear();
+  closeDetail();
+  renderEntries();
+  updateUI();
+});
+chrome.devtools.network.onNavigated.addListener(() => {
+  if (!preserveLogsCheckbox.checked) {
+    entries = [];
+    totalSize = 0;
+    selectedEntries.clear();
+    closeDetail();
+    renderEntries();
+    updateUI();
+  }
 });
 btnMap.addEventListener("click", async () => {
   if (selectedEntries.size === 0) return;
@@ -162,6 +187,8 @@ btnMap.addEventListener("click", async () => {
     })));
     statusEl.textContent = `Mapped ${result.mapped.length} endpoints`;
     btnMap.textContent = "Map to mockr";
+    selectedEntries.clear();
+    renderEntries();
     updateUI();
     document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
     document.querySelectorAll(".tab-content").forEach((tc) => tc.classList.remove("active"));
@@ -173,13 +200,6 @@ btnMap.addEventListener("click", async () => {
     btnMap.textContent = "Map to mockr";
     btnMap.disabled = false;
   }
-});
-btnSelectAllApi.addEventListener("click", () => {
-  const filtered = getFilteredEntries();
-  selectedEntries.clear();
-  for (const e of filtered) selectedEntries.add(e.id);
-  renderEntries();
-  updateUI();
 });
 checkAll.addEventListener("change", () => {
   const filtered = getFilteredEntries();
@@ -198,23 +218,37 @@ filterInput.addEventListener("input", () => {
 document.querySelectorAll("th.sortable").forEach((th) => {
   th.addEventListener("click", () => {
     const key = th.dataset.sort;
-    if (sortKey === key) {
-      sortAsc = !sortAsc;
-    } else {
+    if (sortKey === key) sortAsc = !sortAsc;
+    else {
       sortKey = key;
       sortAsc = true;
     }
     renderEntries();
   });
 });
-document.querySelectorAll(".type-filter").forEach((btn) => {
+document.querySelectorAll(".method-filter").forEach((btn) => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".type-filter").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".method-filter").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
-    activeTypeFilter = btn.dataset.type;
+    activeMethodFilter = btn.dataset.method;
     renderEntries();
   });
 });
+detailClose.addEventListener("click", closeDetail);
+function closeDetail() {
+  entryDetail.style.display = "none";
+  expandedEntryId = null;
+}
+function showDetail(entry) {
+  expandedEntryId = entry.id;
+  detailTitle.textContent = `${entry.method} ${truncateUrl(entry.url)} \u2014 ${entry.status}`;
+  try {
+    detailBody.textContent = JSON.stringify(JSON.parse(entry.body), null, 2);
+  } catch {
+    detailBody.textContent = entry.body;
+  }
+  entryDetail.style.display = "flex";
+}
 btnRefreshSessions.addEventListener("click", loadSessions);
 async function loadSessions() {
   try {
@@ -262,15 +296,12 @@ function startNetworkListener() {
     const timing = request.time || 0;
     if (!isXhr(contentType, url)) return;
     const responseHeaders = {};
-    for (const h of request.response.headers) {
-      responseHeaders[h.name.toLowerCase()] = h.value;
-    }
+    for (const h of request.response.headers) responseHeaders[h.name.toLowerCase()] = h.value;
     request.getContent((content, _encoding) => {
       if (!isRecording) return;
       const body = content || "";
-      const id = `mem-${++entryCounter}`;
       const entry = {
-        id,
+        id: `mem-${++entryCounter}`,
         url,
         method,
         status,
@@ -295,39 +326,11 @@ function stopNetworkListener() {
     networkListener = null;
   }
 }
-function matchesTypeFilter(e) {
-  if (activeTypeFilter === "all") return true;
-  const ct = e.contentType.toLowerCase();
-  const url = e.url.toLowerCase();
-  switch (activeTypeFilter) {
-    case "xhr":
-      return isXhr(ct, url);
-    case "js":
-      return ct.includes("javascript") || url.endsWith(".js");
-    case "css":
-      return ct.includes("css") || url.endsWith(".css");
-    case "img":
-      return ct.includes("image") || /\.(png|jpg|jpeg|gif|svg|webp|ico)(\?|$)/i.test(url);
-    case "font":
-      return ct.includes("font") || /\.(woff|woff2|ttf|otf|eot)(\?|$)/i.test(url);
-    case "doc":
-      return ct.includes("html");
-    case "other": {
-      const types = ["xhr", "js", "css", "img", "font", "doc"];
-      return !types.some((t) => {
-        const prev = activeTypeFilter;
-        activeTypeFilter = t;
-        const m = matchesTypeFilter(e);
-        activeTypeFilter = prev;
-        return m;
-      });
-    }
-    default:
-      return true;
-  }
-}
 function getFilteredEntries() {
-  let filtered = entries.filter(matchesTypeFilter);
+  let filtered = entries;
+  if (activeMethodFilter !== "all") {
+    filtered = filtered.filter((e) => e.method === activeMethodFilter);
+  }
   if (filterText) {
     filtered = filtered.filter((e) => e.url.toLowerCase().includes(filterText));
   }
@@ -348,23 +351,17 @@ function updateUI() {
   updateTotalSize();
 }
 function updateTotalSize() {
-  if (totalSize === 0) {
-    totalSizeEl.textContent = "";
-  } else if (totalSize < 1024) {
-    totalSizeEl.textContent = `${totalSize} B`;
-  } else if (totalSize < 1024 * 1024) {
-    totalSizeEl.textContent = `${(totalSize / 1024).toFixed(1)} KB`;
-  } else {
-    totalSizeEl.textContent = `${(totalSize / (1024 * 1024)).toFixed(1)} MB`;
-  }
+  if (totalSize === 0) totalSizeEl.textContent = "";
+  else if (totalSize < 1024) totalSizeEl.textContent = `${totalSize} B`;
+  else if (totalSize < 1024 * 1024) totalSizeEl.textContent = `${(totalSize / 1024).toFixed(1)} KB`;
+  else totalSizeEl.textContent = `${(totalSize / (1024 * 1024)).toFixed(1)} MB`;
 }
 function renderEntries() {
   const filtered = getFilteredEntries();
   const sorted = [...filtered].sort((a, b) => {
     const av = a[sortKey];
     const bv = b[sortKey];
-    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
-    return sortAsc ? cmp : -cmp;
+    return sortAsc ? av < bv ? -1 : av > bv ? 1 : 0 : av > bv ? -1 : av < bv ? 1 : 0;
   });
   entriesBody.innerHTML = "";
   for (const e of sorted) {
@@ -373,19 +370,31 @@ function renderEntries() {
     const statusClass = e.status < 300 ? "status-2xx" : e.status < 400 ? "status-3xx" : "status-4xx";
     const sizeStr = e.size < 1024 ? `${e.size} B` : e.size < 1024 * 1024 ? `${(e.size / 1024).toFixed(1)} KB` : `${(e.size / (1024 * 1024)).toFixed(1)} MB`;
     const checked = selectedEntries.has(e.id) ? "checked" : "";
+    if (expandedEntryId === e.id) tr.classList.add("entry-selected");
     tr.innerHTML = `
       <td class="col-check"><input type="checkbox" data-entry-id="${e.id}" ${checked} /></td>
       <td class="${methodClass}">${e.method}</td>
-      <td title="${escapeHtml(e.url)}">${escapeHtml(truncateUrl(e.url))}</td>
+      <td class="entry-url" title="${escapeHtml(e.url)}">${escapeHtml(truncateUrl(e.url))}</td>
       <td class="${statusClass}">${e.status}</td>
       <td>${sizeStr}</td>
       <td>${e.timing ? `${Math.round(e.timing)}ms` : "-"}</td>
     `;
     const checkbox = tr.querySelector('input[type="checkbox"]');
-    checkbox.addEventListener("change", () => {
+    checkbox.addEventListener("change", (ev) => {
+      ev.stopPropagation();
       if (checkbox.checked) selectedEntries.add(e.id);
       else selectedEntries.delete(e.id);
       updateUI();
+    });
+    tr.addEventListener("click", (ev) => {
+      if (ev.target.tagName === "INPUT") return;
+      if (expandedEntryId === e.id) {
+        closeDetail();
+        renderEntries();
+      } else {
+        showDetail(e);
+        renderEntries();
+      }
     });
     entriesBody.appendChild(tr);
   }
@@ -405,12 +414,31 @@ function truncateUrl(url) {
 var mockedBody = document.getElementById("mocked-body");
 var btnRefreshMocked = document.getElementById("btn-refresh-mocked");
 btnRefreshMocked.addEventListener("click", loadMockedEndpoints);
+var editorScheme = document.getElementById("editor-scheme");
+chrome.storage.local.get("mockrEditorScheme", (result) => {
+  if (result.mockrEditorScheme) editorScheme.value = result.mockrEditorScheme;
+});
+editorScheme.addEventListener("change", () => {
+  chrome.storage.local.set({ mockrEditorScheme: editorScheme.value });
+});
+function getEditorUrl(filePath) {
+  switch (editorScheme.value) {
+    case "cursor":
+      return `cursor://file${filePath}`;
+    case "webstorm":
+      return `webstorm://open?file=${filePath}`;
+    case "nvim":
+      return `nvim://${filePath}`;
+    default:
+      return `vscode://file${filePath}`;
+  }
+}
 async function loadMockedEndpoints() {
   try {
     const endpoints = await api.listEndpoints();
     renderMockedEndpoints(endpoints);
   } catch (err) {
-    mockedBody.innerHTML = `<tr><td colspan="5">Error: ${err.message}</td></tr>`;
+    mockedBody.innerHTML = `<tr><td colspan="6">Error: ${err.message}</td></tr>`;
   }
 }
 function renderMockedEndpoints(eps) {
@@ -433,7 +461,7 @@ function renderMockedEndpoints(eps) {
       </td>
       <td class="actions-cell">
         <button class="btn btn-save-url" style="display:none;">Save</button>
-        ${ep.bodyFile ? `<span class="body-file" title="${escapeHtml(ep.bodyFile)}">${ep.bodyFile.split("/").pop()}</span>` : ""}
+        ${ep.filePath ? `<a class="btn btn-open" href="${getEditorUrl(ep.filePath)}" title="${escapeHtml(ep.filePath)}">Open</a>` : ""}
       </td>
       <td><button class="btn btn-delete btn-delete-ep">x</button></td>
     `;

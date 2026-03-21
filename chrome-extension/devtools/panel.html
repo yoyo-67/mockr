@@ -11,6 +11,13 @@
       <div class="server-config">
         <label>Server:</label>
         <input type="text" id="server-url" value="http://localhost:4000" />
+        <label>Editor:</label>
+        <select id="editor-scheme">
+          <option value="vscode">VS Code</option>
+          <option value="cursor">Cursor</option>
+          <option value="webstorm">WebStorm</option>
+          <option value="nvim">Neovim</option>
+        </select>
       </div>
     </header>
 
@@ -18,7 +25,8 @@
       <button id="btn-record" class="btn btn-record">Record</button>
       <button id="btn-stop" class="btn btn-stop" disabled>Stop</button>
       <button id="btn-map" class="btn btn-map" disabled>Map to mockr</button>
-      <button id="btn-select-all" class="btn">Select All API</button>
+      <button id="btn-clear" class="btn">Clear</button>
+      <label class="preserve-logs"><input type="checkbox" id="preserve-logs" /> Preserve log</label>
       <span id="status" class="status">Idle</span>
       <span id="total-size" class="total-size"></span>
     </div>
@@ -31,31 +39,38 @@
 
     <div id="tab-recording" class="tab-content active">
       <div class="filter-bar">
-        <div class="type-filters">
-          <button class="type-filter active" data-type="xhr">XHR</button>
-          <button class="type-filter" data-type="js">JS</button>
-          <button class="type-filter" data-type="css">CSS</button>
-          <button class="type-filter" data-type="img">Img</button>
-          <button class="type-filter" data-type="font">Font</button>
-          <button class="type-filter" data-type="doc">Doc</button>
-          <button class="type-filter" data-type="other">Other</button>
-          <button class="type-filter" data-type="all">All</button>
+        <div class="method-filters">
+          <button class="method-filter active" data-method="all">All</button>
+          <button class="method-filter" data-method="GET">GET</button>
+          <button class="method-filter" data-method="POST">POST</button>
+          <button class="method-filter" data-method="PUT">PUT</button>
+          <button class="method-filter" data-method="PATCH">PATCH</button>
+          <button class="method-filter" data-method="DELETE">DELETE</button>
         </div>
         <input type="text" id="filter-input" placeholder="Filter by URL..." />
       </div>
-      <table id="entries-table">
-        <thead>
-          <tr>
-            <th class="col-check"><input type="checkbox" id="check-all" /></th>
-            <th class="sortable" data-sort="method">Method</th>
-            <th class="sortable" data-sort="url">URL</th>
-            <th class="sortable" data-sort="status">Status</th>
-            <th class="sortable" data-sort="size">Size</th>
-            <th class="sortable" data-sort="timing">Time</th>
-          </tr>
-        </thead>
-        <tbody id="entries-body"></tbody>
-      </table>
+      <div class="entries-area">
+        <table id="entries-table">
+          <thead>
+            <tr>
+              <th class="col-check"><input type="checkbox" id="check-all" /></th>
+              <th class="sortable" data-sort="method">Method</th>
+              <th class="sortable" data-sort="url">URL</th>
+              <th class="sortable" data-sort="status">Status</th>
+              <th class="sortable" data-sort="size">Size</th>
+              <th class="sortable" data-sort="timing">Time</th>
+            </tr>
+          </thead>
+          <tbody id="entries-body"></tbody>
+        </table>
+        <div id="entry-detail" class="entry-detail" style="display:none;">
+          <div class="detail-header">
+            <span id="detail-title"></span>
+            <button id="detail-close" class="btn">Close</button>
+          </div>
+          <pre id="detail-body" class="detail-body"></pre>
+        </div>
+      </div>
     </div>
 
     <div id="tab-sessions" class="tab-content">
