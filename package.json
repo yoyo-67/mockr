@@ -44,6 +44,7 @@
   "dependencies": {
     "@yoyo-org/tui-kit": "^0.1.0",
     "path-to-regexp": "^8.2.0",
+    "prettier": "^3.8.1",
     "ts-morph": "^27.0.2"
   }
 }

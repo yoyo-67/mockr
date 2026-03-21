@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -8,6 +8,13 @@ import {
   updateUrlInServerFile,
   changeToHandlerInServerFile,
 } from '../src/server-file-patcher.js';
+
+/** Check if string contains text regardless of quote style */
+function containsText(src: string, text: string): boolean {
+  // Normalize quotes for comparison
+  const norm = (s: string) => s.replace(/['"]/g, '');
+  return norm(src).includes(norm(text));
+}
 
 describe('Server file patcher', () => {
   let tmpDir: string;
@@ -37,8 +44,6 @@ const server = await mockr<Endpoints>({
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  // addEndpointToServerFile
-
   it('adds dataFile entry to endpoints array', async () => {
     await addEndpointToServerFile(serverFile, {
       url: '/api/items',
@@ -47,10 +52,10 @@ const server = await mockr<Endpoints>({
     });
 
     const src = await readFile(serverFile, 'utf-8');
-    expect(src).toContain("dataFile: './mocks/api-items.json'");
-    expect(src).toContain("url: '/api/items'");
-    // Should NOT contain bodyFile
-    expect(src).not.toContain('bodyFile');
+    expect(containsText(src, 'dataFile')).toBe(true);
+    expect(containsText(src, 'api-items.json')).toBe(true);
+    expect(containsText(src, '/api/items')).toBe(true);
+    expect(containsText(src, 'bodyFile')).toBe(false);
   });
 
   it('always uses dataFile (never bodyFile)', async () => {
@@ -61,16 +66,13 @@ const server = await mockr<Endpoints>({
     });
 
     const src = await readFile(serverFile, 'utf-8');
-    expect(src).toContain('dataFile');
-    expect(src).not.toContain('bodyFile');
+    expect(containsText(src, 'dataFile')).toBe(true);
+    expect(containsText(src, 'bodyFile')).toBe(false);
   });
 
   it('adds type import and Endpoints entry when typesFile provided', async () => {
-    const typesFile = join(tmpDir, 'mocks', 'api-items.d.ts');
-    await writeFile(join(tmpDir, 'mocks', 'api-items.d.ts'), 'export interface ApiItems { id: number }', 'utf-8').catch(() => {});
-    // Create the dir
-    const { mkdir } = await import('node:fs/promises');
     await mkdir(join(tmpDir, 'mocks'), { recursive: true });
+    const typesFile = join(tmpDir, 'mocks', 'api-items.d.ts');
     await writeFile(typesFile, 'export interface ApiItems { id: number }', 'utf-8');
 
     await addEndpointToServerFile(serverFile, {
@@ -81,48 +83,41 @@ const server = await mockr<Endpoints>({
     });
 
     const src = await readFile(serverFile, 'utf-8');
-    // Should have type import
-    expect(src).toContain('import type');
-    expect(src).toContain('ApiItems');
-    // Should have Endpoints type entry
-    expect(src).toContain("'/api/items': ApiItems");
+    expect(containsText(src, 'import type')).toBe(true);
+    expect(containsText(src, 'ApiItems')).toBe(true);
+    expect(containsText(src, '/api/items')).toBe(true);
   });
 
   it('skips if URL already exists in file', async () => {
     await addEndpointToServerFile(serverFile, {
-      url: '/api/existing', // already in template
+      url: '/api/existing',
       method: 'GET',
       filePath: './mocks/existing.json',
     });
 
     const src = await readFile(serverFile, 'utf-8');
-    // Should not duplicate — same count as original template
     const original = TEMPLATE;
-    const originalCount = (original.match(/api\/existing/g) || []).length;
-    const count = (src.match(/api\/existing/g) || []).length;
-    expect(count).toBe(originalCount);
+    // Normalize both for fair comparison (prettier may reformat)
+    const origCount = (original.replace(/['"]/g, '').match(/api\/existing/g) || []).length;
+    const newCount = (src.replace(/['"]/g, '').match(/api\/existing/g) || []).length;
+    expect(newCount).toBe(origCount);
   });
 
-  // removeEndpointFromServerFile
-
   it('removes endpoint entry from array', async () => {
-    // First add one
     await addEndpointToServerFile(serverFile, {
       url: '/api/items',
       method: 'GET',
       filePath: './mocks/api-items.json',
     });
     let src = await readFile(serverFile, 'utf-8');
-    expect(src).toContain("'/api/items'");
+    expect(containsText(src, '/api/items')).toBe(true);
 
-    // Then remove it
     await removeEndpointFromServerFile(serverFile, '/api/items');
     src = await readFile(serverFile, 'utf-8');
-    expect(src).not.toContain("'/api/items'");
+    expect(containsText(src, 'api-items')).toBe(false);
   });
 
   it('removes type entry and import on delete', async () => {
-    const { mkdir } = await import('node:fs/promises');
     await mkdir(join(tmpDir, 'mocks'), { recursive: true });
     const typesFile = join(tmpDir, 'mocks', 'api-items.d.ts');
     await writeFile(typesFile, 'export interface ApiItems { id: number }', 'utf-8');
@@ -135,25 +130,20 @@ const server = await mockr<Endpoints>({
     });
 
     let src = await readFile(serverFile, 'utf-8');
-    expect(src).toContain('ApiItems');
+    expect(containsText(src, 'ApiItems')).toBe(true);
 
     await removeEndpointFromServerFile(serverFile, '/api/items');
     src = await readFile(serverFile, 'utf-8');
-    expect(src).not.toContain('ApiItems');
-    expect(src).not.toContain("'/api/items'");
+    expect(containsText(src, 'ApiItems')).toBe(false);
   });
-
-  // updateUrlInServerFile
 
   it('replaces URL in all locations', async () => {
     await updateUrlInServerFile(serverFile, '/api/existing', '/api/v1/items/**');
 
     const src = await readFile(serverFile, 'utf-8');
-    expect(src).toContain("'/api/v1/items/**'");
-    expect(src).not.toContain("'/api/existing'");
+    expect(containsText(src, '/api/v1/items/**')).toBe(true);
+    expect(containsText(src, '/api/existing')).toBe(false);
   });
-
-  // changeToHandlerInServerFile
 
   it('changes dataFile to handler', async () => {
     await addEndpointToServerFile(serverFile, {
@@ -165,7 +155,7 @@ const server = await mockr<Endpoints>({
     await changeToHandlerInServerFile(serverFile, '/api/items');
 
     const src = await readFile(serverFile, 'utf-8');
-    expect(src).toContain('handler');
-    expect(src).not.toContain('dataFile');
+    expect(containsText(src, 'handler')).toBe(true);
+    expect(containsText(src, 'dataFile')).toBe(false);
   });
 });

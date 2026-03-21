@@ -1,7 +1,21 @@
 import { Project, SyntaxKind, type SourceFile, type TypeLiteralNode, type ArrayLiteralExpression } from 'ts-morph';
 import { relative, dirname } from 'node:path';
+import { readFile as readFileAsync, writeFile as writeFileAsync } from 'node:fs/promises';
 
 const project = new Project({ useInMemoryFileSystem: false, skipAddingFilesFromTsConfig: true });
+
+async function formatFile(filePath: string): Promise<void> {
+  try {
+    // Use prettier's programmatic API (no process spawn, instant)
+    const prettier = await import('prettier');
+    const source = await readFileAsync(filePath, 'utf-8');
+    const options = await prettier.resolveConfig(filePath) ?? {};
+    const formatted = await prettier.format(source, { ...options, filepath: filePath });
+    await writeFileAsync(filePath, formatted, 'utf-8');
+  } catch {
+    // Prettier not available — skip silently
+  }
+}
 
 function getSourceFile(filePath: string): SourceFile {
   const existing = project.getSourceFile(filePath);
@@ -98,6 +112,7 @@ export async function addEndpointToServerFile(
   }
 
   await src.save();
+  await formatFile(serverFile);
 }
 
 /**
@@ -124,7 +139,7 @@ export async function removeEndpointFromServerFile(serverFile: string, url: stri
   const endpointsType = findEndpointsType(src);
   if (endpointsType) {
     for (const prop of endpointsType.getProperties()) {
-      if (prop.isKind(SyntaxKind.PropertySignature) && prop.getName() === `'${url}'`) {
+      if (prop.isKind(SyntaxKind.PropertySignature) && (prop.getName() === `'${url}'` || prop.getName() === `"${url}"`)) {
         prop.remove();
         break;
       }
@@ -145,6 +160,7 @@ export async function removeEndpointFromServerFile(serverFile: string, url: stri
   }
 
   await src.save();
+  await formatFile(serverFile);
 }
 
 /**
@@ -160,6 +176,7 @@ export async function updateUrlInServerFile(serverFile: string, oldUrl: string, 
   }
 
   await src.save();
+  await formatFile(serverFile);
 }
 
 /**
@@ -191,4 +208,5 @@ export async function changeToHandlerInServerFile(serverFile: string, url: strin
   }
 
   await src.save();
+  await formatFile(serverFile);
 }
