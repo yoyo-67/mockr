@@ -349,6 +349,7 @@ function updateUI() {
     statusEl.className = "status";
   }
   updateTotalSize();
+  saveState();
 }
 function updateTotalSize() {
   if (totalSize === 0) totalSizeEl.textContent = "";
@@ -515,6 +516,48 @@ function renderMockedEndpoints(eps) {
     mockedBody.appendChild(tr);
   }
 }
-startNetworkListener();
-updateUI();
+var saveTimer = null;
+function saveState() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    const state = {
+      entries,
+      selectedIds: [...selectedEntries],
+      filterText,
+      methodFilter: activeMethodFilter,
+      isRecording,
+      entryCounter,
+      preserveLogs: preserveLogsCheckbox.checked
+    };
+    chrome.storage.local.set({ mockrPanelState: state });
+  }, 300);
+}
+async function restoreState() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get("mockrPanelState", (result) => {
+      const state = result.mockrPanelState;
+      if (state) {
+        entries = state.entries || [];
+        totalSize = entries.reduce((s, e) => s + e.size, 0);
+        selectedEntries.clear();
+        for (const id of state.selectedIds || []) selectedEntries.add(id);
+        filterText = state.filterText || "";
+        filterInput.value = filterText;
+        activeMethodFilter = state.methodFilter || "all";
+        document.querySelectorAll(".method-filter").forEach((b) => {
+          b.classList.toggle("active", b.dataset.method === activeMethodFilter);
+        });
+        isRecording = state.isRecording ?? true;
+        entryCounter = state.entryCounter || entries.length;
+        preserveLogsCheckbox.checked = state.preserveLogs ?? false;
+      }
+      resolve();
+    });
+  });
+}
+restoreState().then(() => {
+  renderEntries();
+  updateUI();
+  if (isRecording) startNetworkListener();
+});
 //# sourceMappingURL=panel.js.map

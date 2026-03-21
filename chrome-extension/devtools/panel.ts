@@ -309,6 +309,7 @@ function updateUI() {
     statusEl.className = 'status';
   }
   updateTotalSize();
+  saveState();
 }
 
 function updateTotalSize() {
@@ -490,6 +491,64 @@ function renderMockedEndpoints(eps: Array<{ url: string; method: string; type: s
   }
 }
 
-// Auto-start recording
-startNetworkListener();
-updateUI();
+// --- State persistence ---
+
+interface PanelState {
+  entries: MemoryEntry[];
+  selectedIds: string[];
+  filterText: string;
+  methodFilter: string;
+  isRecording: boolean;
+  entryCounter: number;
+  preserveLogs: boolean;
+}
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function saveState() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    const state: PanelState = {
+      entries,
+      selectedIds: [...selectedEntries],
+      filterText,
+      methodFilter: activeMethodFilter,
+      isRecording,
+      entryCounter,
+      preserveLogs: preserveLogsCheckbox.checked,
+    };
+    chrome.storage.local.set({ mockrPanelState: state });
+  }, 300);
+}
+
+
+async function restoreState() {
+  return new Promise<void>((resolve) => {
+    chrome.storage.local.get('mockrPanelState', (result: Record<string, PanelState>) => {
+      const state = result.mockrPanelState;
+      if (state) {
+        entries = state.entries || [];
+        totalSize = entries.reduce((s, e) => s + e.size, 0);
+        selectedEntries.clear();
+        for (const id of state.selectedIds || []) selectedEntries.add(id);
+        filterText = state.filterText || '';
+        filterInput.value = filterText;
+        activeMethodFilter = state.methodFilter || 'all';
+        document.querySelectorAll('.method-filter').forEach(b => {
+          b.classList.toggle('active', (b as HTMLElement).dataset.method === activeMethodFilter);
+        });
+        isRecording = state.isRecording ?? true;
+        entryCounter = state.entryCounter || entries.length;
+        preserveLogsCheckbox.checked = state.preserveLogs ?? false;
+      }
+      resolve();
+    });
+  });
+}
+
+// Restore then start
+restoreState().then(() => {
+  renderEntries();
+  updateUI();
+  if (isRecording) startNetworkListener();
+});
