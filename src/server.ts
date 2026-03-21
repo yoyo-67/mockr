@@ -70,6 +70,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
   const recorderEnabled = !!config.recorder;
   let recorder: Recorder | null = null;
   const mocksDir = resolve(config.recorder?.mocksDir ?? 'mocks');
+
   const serverFile = config.recorder?.serverFile ? resolve(config.recorder.serverFile) : null;
 
   if (recorderEnabled) {

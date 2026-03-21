@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@yoyo-org/mockr)](https://www.npmjs.com/package/@yoyo-org/mockr)
 
-Mock API server for frontend prototyping. Define endpoints with data, get full CRUD for free. Mock the routes you're building, proxy the rest to a real backend.
+Mock API server for frontend prototyping. Define endpoints with data, get full CRUD for free. Mock the routes you're building, proxy the rest to a real backend. Record network traffic from a Chrome extension and map it to local files.
 
 ## Setup
 
@@ -66,7 +66,7 @@ interface Order {
 }
 
 type Endpoints = {
-  '/internal/orders': Order;
+  '/internal/orders': Order[];
 };
 
 const server = await mockr<Endpoints>({
@@ -138,17 +138,84 @@ orders.where({ status: 'shipped' }); // Order[]
 
 ### Load data from files
 
-Keep your mock data in JSON files instead of inlining it:
+Keep your mock data in JSON files instead of inlining it. `dataFile` auto-detects the shape:
+
+- **Array JSON** → data endpoint with full CRUD
+- **Object JSON** → static endpoint (read-only)
 
 ```ts
 const server = await mockr({
   port: 4000,
   endpoints: [
-    { url: '/api/todos', dataFile: './todos.json' },    // array → CRUD
-    { url: '/api/config', bodyFile: './config.json' },   // object → static
+    { url: '/api/todos', dataFile: './todos.json' },    // [{id:1}...] → CRUD
+    { url: '/api/config', dataFile: './config.json' },   // {...} → static
   ],
 });
 ```
+
+### URL matching
+
+```ts
+endpoints: [
+  { url: '/api/items/:id', handler: ... },           // named param
+  { url: '/api/projects/*/activities', handler: ... }, // * = any one segment
+  { url: '/api/**', handler: ... },                    // ** = catch-all
+  { url: /^\/v\d+\//, handler: ... },                  // regex
+]
+```
+
+---
+
+## Chrome Extension — Record & Map
+
+Record network traffic from your app and map API responses to local files — no manual endpoint setup needed.
+
+### Install
+
+```bash
+cd chrome-extension
+npm install && npm run build
+```
+
+Load as unpacked extension from `chrome://extensions` (Developer mode → Load unpacked → select `chrome-extension/`).
+
+### Usage
+
+1. Open your app, then open DevTools → **mockr** panel
+2. XHR requests are recorded automatically
+3. Select entries (checkboxes or "Select All API")
+4. Click **Map to mockr**
+
+This:
+- Writes JSON files to your `mocks/` directory
+- Generates `.d.ts` type files
+- Adds `dataFile` entries to your server file
+- Updates your `Endpoints` type with generated types
+- Creates live endpoints immediately (no restart needed)
+
+### Server config for recording
+
+```ts
+const server = await mockr<Endpoints>({
+  port: 4000,
+  recorder: {
+    mocksDir: './mocks',              // writes JSON files here
+    serverFile: './src/server.ts',    // patches endpoints, types, and imports
+  },
+  proxy: { target: 'https://api.example.com' },
+  endpoints: [
+    // mapped endpoints get added here automatically
+  ],
+});
+```
+
+### Mocked tab
+
+The **Mocked** tab in the extension shows all endpoints with:
+- **Enable/disable** toggle
+- **Editable URL** — change `/api/projects/abc123/items` to `/api/projects/*/items`
+- **Type selector** — switch between static, handler, and data
+- **Delete** button
 
 ---
 
@@ -159,41 +226,84 @@ Override config values from the command line:
 ```bash
 npx tsx mock.ts --port 3000
 npx tsx mock.ts --proxy https://api.example.com
+npx tsx mock.ts --recorder
 npx tsx mock.ts --help
 ```
 
 | Flag | Description |
 |---|---|
-| `--port <number>` | Port to listen on (overrides the port in your config) |
+| `--port <number>` | Port to listen on (overrides config) |
 | `--proxy <url>` | Proxy unmatched requests to this URL |
+| `--recorder` | Enable the recorder |
+| `--tui` | Enable the terminal UI |
 | `--help`, `-h` | Show help message |
 
 ---
 
+## Endpoints type system
+
+The `Endpoints` generic maps URLs to their response type:
+
+```ts
+type Endpoints = {
+  '/api/items': Item[];           // array → data endpoint, handle.data is Item[]
+  '/api/config': AppConfig;       // object → static endpoint, handle.body is AppConfig
+};
+
+const server = await mockr<Endpoints>({ ... });
+
+const items = server.endpoint('/api/items');
+items.data;           // Item[]
+items.findById(1);    // Item | undefined (ElementOf<Item[]>)
+items.insert({...});  // Item
+
+const config = server.endpoint('/api/config');
+config.body;          // AppConfig
+```
+
 ## API reference
 
-### `EndpointHandle`
+### `EndpointHandle<T>`
+
+| Method | Return type | Description |
+|---|---|---|
+| `data` | `T` | The data (array for data endpoints, object for static) |
+| `body` | `T` | The response body |
+| `findById(id)` | `ElementOf<T> \| undefined` | Find item by id |
+| `where(filter)` | `ElementOf<T>[]` | Filter by object match or predicate |
+| `first()` | `ElementOf<T> \| undefined` | First item |
+| `count()` | `number` | Number of items |
+| `has(id)` | `boolean` | Check if id exists |
+| `insert(item)` | `ElementOf<T>` | Add item (returns with generated id) |
+| `update(id, patch)` | `ElementOf<T> \| undefined` | Partial update |
+| `updateMany(ids, patch)` | `ElementOf<T>[]` | Update multiple items |
+| `patch(id, fields, defaults?)` | `ElementOf<T> \| undefined` | Apply non-undefined fields + defaults |
+| `remove(id)` | `boolean` | Delete by id |
+| `clear()` | `void` | Remove all items |
+| `reset()` | `void` | Restore original data |
+| `save(path)` | `Promise<void>` | Save to file |
+
+### `MockrServer`
 
 | Method | Description |
 |---|---|
-| `data` | Direct access to the data array |
-| `findById(id)` | Find item by id |
-| `where(filter)` | Filter by object match or predicate |
-| `first()` | First item |
-| `count()` | Number of items |
-| `has(id)` | Check if id exists |
-| `insert(item)` | Add item (returns with generated id) |
-| `update(id, patch)` | Partial update |
-| `updateMany(ids, patch)` | Update multiple items. `patch` can be an object or `(item) => Partial<T>` |
-| `patch(id, fields, defaults?)` | Apply only non-undefined fields, then unconditional defaults |
-| `remove(id)` | Delete by id |
-| `clear()` | Remove all items |
-| `reset()` | Restore original data |
-| `save(path)` | Save this endpoint to file |
+| `endpoint(url)` | Get typed `EndpointHandle` for a URL |
+| `listEndpoints()` | List all endpoints with type, method, enabled status |
+| `enableEndpoint(url)` / `disableEndpoint(url)` | Toggle endpoints |
+| `enableAll()` / `disableAll()` | Bulk toggle |
+| `use(middleware)` | Add middleware at runtime |
+| `scenario(name)` | Apply a named scenario |
+| `reset()` | Reset all endpoints to initial state |
+| `save(path)` | Save snapshot to file |
+| `close()` | Shut down server |
+| `setPort(port)` | Change listening port |
+| `enableProxy()` / `disableProxy()` | Toggle proxy |
+| `setProxyTarget(url)` | Change proxy target |
+| `tui()` | Launch terminal UI |
+| `recorder` | Recorder API (if enabled) |
 
 See [`examples/`](./examples) for more usage patterns.
 
 ## License
 
 MIT
-

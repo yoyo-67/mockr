@@ -385,9 +385,9 @@ describe('Mapped endpoint type inference', () => {
     expectTypeOf(rec.mapToFile).toBeCallableWith('session-id', ['entry-1'], { generateTypes: true });
   });
 
-  it('MockrConfig accepts serverFile in recorder', () => {
+  it('MockrConfig accepts recorder options', () => {
     const config: MockrConfig = {
-      recorder: { serverFile: './src/server.ts', mocksDir: './mocks' },
+      recorder: { mocksDir: './mocks', serverFile: './src/server.ts' },
     };
     config;
   });
