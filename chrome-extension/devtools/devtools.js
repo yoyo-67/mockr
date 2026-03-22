@@ -1,6 +1,6 @@
 // devtools/devtools.ts
 chrome.devtools.panels.create(
-  "mockr",
+  "Mockr",
   "",
   "devtools/panel.html"
 );

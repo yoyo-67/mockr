@@ -6,7 +6,8 @@
   "permissions": [
     "devtools",
     "storage",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "tabs"
   ],
   "host_permissions": [
     "<all_urls>"

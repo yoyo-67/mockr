@@ -30,4 +30,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
+// Open in editor via URL scheme
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'open-editor' && msg.url) {
+    chrome.tabs.create({ url: msg.url, active: false }, (tab) => {
+      if (tab?.id) setTimeout(() => chrome.tabs.remove(tab.id!), 300);
+    });
+  }
+});
+
 console.log('[mockr] Service worker loaded — background recording active');

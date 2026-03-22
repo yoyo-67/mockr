@@ -1,4 +1,5 @@
 import * as esbuild from 'esbuild';
+import { execSync } from 'child_process';
 
 const watch = process.argv.includes('--watch');
 
@@ -17,8 +18,9 @@ const configs = [
   },
   {
     ...commonOptions,
-    entryPoints: ['devtools/panel.ts'],
+    entryPoints: ['devtools/panel.tsx'],
     outfile: 'devtools/panel.js',
+    jsx: 'automatic',
   },
   {
     ...commonOptions,
@@ -39,6 +41,11 @@ const configs = [
   },
 ];
 
+// Build Tailwind CSS
+function buildCss() {
+  execSync('npx @tailwindcss/cli -i devtools/panel.css -o devtools/panel.built.css --minify', { stdio: 'inherit' });
+}
+
 if (watch) {
   for (const config of configs) {
     const ctx = await esbuild.context(config);
@@ -49,5 +56,6 @@ if (watch) {
   for (const config of configs) {
     await esbuild.build(config);
   }
+  buildCss();
   console.log('Build complete');
 }

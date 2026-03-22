@@ -159,7 +159,18 @@ export async function handleControlRoute(
     });
 
     if (idx === -1) { sendCorsJson(res, 404, { error: 'Endpoint not found' }); return true; }
-    endpoints.splice(idx, 1);
+    const removed = endpoints.splice(idx, 1)[0];
+
+    // Delete the mock file from disk
+    if (removed.filePath) {
+      try {
+        const { unlink } = await import('node:fs/promises');
+        await unlink(removed.filePath);
+        // Also delete .d.ts if it exists
+        const dtsPath = removed.filePath.replace(/\.(json|txt)$/, '.d.ts');
+        await unlink(dtsPath).catch(() => {});
+      } catch { /* file may not exist */ }
+    }
 
     if (serverFile) {
       try { await removeEndpointFromServerFile(serverFile, reqBody.url); }

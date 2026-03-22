@@ -1,7 +1,7 @@
 {
   "version": 3,
   "sources": ["devtools.ts"],
-  "sourcesContent": ["chrome.devtools.panels.create(\n  'mockr',\n  '',\n  'devtools/panel.html',\n);\n"],
+  "sourcesContent": ["chrome.devtools.panels.create(\n  'Mockr',\n  '',\n  'devtools/panel.html',\n);\n"],
   "mappings": ";AAAA,OAAO,SAAS,OAAO;AAAA,EACrB;AAAA,EACA;AAAA,EACA;AACF;",
   "names": []
 }

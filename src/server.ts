@@ -88,17 +88,18 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
 
   // Load fixture file
   if (config.fixtureFile) {
-    const raw = await readFile(resolve(config.fixtureFile), 'utf-8');
+    const fixtureFilePath = resolve(config.fixtureFile);
+    const raw = await readFile(fixtureFilePath, 'utf-8');
     const fixtures = JSON.parse(raw) as Record<string, unknown>;
     for (const [url, value] of Object.entries(fixtures)) {
       if (Array.isArray(value)) {
         const handle = createEndpointHandle(value, url);
-        endpoints.push({ url, matcher: createMatcher(url), handle, isData: true, isHandler: false, isStatic: false, handlerFn: null, idKey: 'id', schemas: null, disabled: false });
+        endpoints.push({ url, matcher: createMatcher(url), handle, isData: true, isHandler: false, isStatic: false, handlerFn: null, idKey: 'id', schemas: null, disabled: false, filePath: fixtureFilePath });
       } else {
         const handle = createEndpointHandle([], url);
         handle.body = value;
         handle.response = { status: 200, headers: {}, body: value };
-        endpoints.push({ url, matcher: createMatcher(url), handle, idKey: 'id', isData: false, isHandler: false, isStatic: true, handlerFn: null, schemas: null, disabled: false });
+        endpoints.push({ url, matcher: createMatcher(url), handle, idKey: 'id', isData: false, isHandler: false, isStatic: true, handlerFn: null, schemas: null, disabled: false, filePath: fixtureFilePath });
       }
     }
   }
@@ -113,18 +114,29 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       const handle = createEndpointHandle(def.data as unknown[], urlStr, key);
       endpoints.push({ url: def.url, method: def.method, matcher, handle, idKey: key, isData: true, isHandler: false, isStatic: false, handlerFn: null, schemas: null, disabled: false });
     } else if ('dataFile' in def && def.dataFile !== undefined) {
-      const raw = await readFile(resolve(def.dataFile), 'utf-8');
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        const key = (def as any).idKey || 'id';
-        const handle = createEndpointHandle(parsed, urlStr, key);
-        endpoints.push({ url: def.url, method: def.method, matcher, handle, idKey: key, isData: true, isHandler: false, isStatic: false, handlerFn: null, schemas: null, disabled: false });
-      } else {
-        const handle = createEndpointHandle([], urlStr);
-        handle.body = parsed;
-        handle.response = { status: 200, headers: {}, body: parsed };
-        endpoints.push({ url: def.url, method: def.method, matcher, handle, idKey: 'id', isData: false, isHandler: false, isStatic: true, handlerFn: null, schemas: null, disabled: false });
+      // Load initial data and re-read from disk on each request (live reload)
+      const filePath = resolve(def.dataFile);
+      const raw = await readFile(filePath, 'utf-8');
+      const fileData = JSON.parse(raw);
+      const key = (def as any).idKey || 'id';
+      const handle = createEndpointHandle(Array.isArray(fileData) ? fileData : [], urlStr, key);
+      if (!Array.isArray(fileData)) {
+        handle.body = fileData;
+        handle.response = { status: 200, headers: {}, body: fileData };
       }
+      const handlerFn: InternalEndpoint['handlerFn'] = async () => {
+        const freshRaw = await readFile(filePath, 'utf-8');
+        const freshData = JSON.parse(freshRaw);
+        if (Array.isArray(freshData)) {
+          handle.data = freshData;
+        } else {
+          handle.body = freshData;
+          handle.response = { status: 200, headers: {}, body: freshData };
+        }
+        return { status: 200, body: freshData };
+      };
+      handle.handler = handlerFn;
+      endpoints.push({ url: def.url, method: def.method, matcher, handle, idKey: key, isData: Array.isArray(fileData), isHandler: true, isStatic: false, handlerFn, schemas: null, disabled: false, filePath });
     } else if ('handler' in def && def.handler !== undefined) {
       const h = def.handler;
       const isValidated = typeof h === 'object' && 'fn' in h;

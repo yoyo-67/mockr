@@ -99,6 +99,55 @@ describe('JSON files', () => {
     await unlink(snapshotPath).catch(() => {});
   });
 
+  it('dataFile re-reads from disk on each request (live reload)', async () => {
+    await mkdir(FIXTURES_DIR, { recursive: true });
+    const dataPath = `${FIXTURES_DIR}/live.json`;
+    await writeFile(dataPath, JSON.stringify([{ id: 1, name: 'Original' }]));
+
+    server = await mockr({
+      endpoints: [
+        { url: '/api/live', dataFile: dataPath },
+      ],
+    });
+
+    // First request — original data
+    const r1 = await fetch(`${server.url}/api/live`).then(r => r.json());
+    expect(r1).toEqual([{ id: 1, name: 'Original' }]);
+
+    // Edit the file on disk
+    await writeFile(dataPath, JSON.stringify([{ id: 1, name: 'Updated' }, { id: 2, name: 'New' }]));
+
+    // Second request — picks up the change without restart
+    const r2 = await fetch(`${server.url}/api/live`).then(r => r.json());
+    expect(r2).toEqual([{ id: 1, name: 'Updated' }, { id: 2, name: 'New' }]);
+
+    await unlink(dataPath).catch(() => {});
+  });
+
+  it('dataFile re-reads objects from disk too', async () => {
+    await mkdir(FIXTURES_DIR, { recursive: true });
+    const dataPath = `${FIXTURES_DIR}/config-live.json`;
+    await writeFile(dataPath, JSON.stringify({ theme: 'dark' }));
+
+    server = await mockr({
+      endpoints: [
+        { url: '/api/config-live', dataFile: dataPath },
+      ],
+    });
+
+    const r1 = await fetch(`${server.url}/api/config-live`).then(r => r.json());
+    expect(r1).toEqual({ theme: 'dark' });
+
+    // Edit
+    await writeFile(dataPath, JSON.stringify({ theme: 'light', lang: 'en' }));
+
+    // Picks up change
+    const r2 = await fetch(`${server.url}/api/config-live`).then(r => r.json());
+    expect(r2).toEqual({ theme: 'light', lang: 'en' });
+
+    await unlink(dataPath).catch(() => {});
+  });
+
   it('saves individual endpoint data', async () => {
     server = await mockr({
       endpoints: [

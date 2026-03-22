@@ -24,5 +24,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ ok: true });
   }
 });
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === "open-editor" && msg.url) {
+    chrome.tabs.create({ url: msg.url, active: false }, (tab) => {
+      if (tab?.id) setTimeout(() => chrome.tabs.remove(tab.id), 300);
+    });
+  }
+});
 console.log("[mockr] Service worker loaded \u2014 background recording active");
 //# sourceMappingURL=service-worker.js.map
