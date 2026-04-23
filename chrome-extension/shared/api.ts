@@ -109,4 +109,61 @@ export class MockrApi {
       body: JSON.stringify({ url, enabled, method }),
     });
   }
+
+  // In-memory replay sessions
+  async createMemSession(name: string): Promise<MemSessionInfo> {
+    return this.request('/__mockr/mem-sessions', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  async listMemSessions(): Promise<{ sessions: MemSessionInfo[]; active: MemSessionActive | null }> {
+    return this.request('/__mockr/mem-sessions');
+  }
+
+  async getMemSession(id: string): Promise<MemSessionInfo & { entries: MemSessionEntry[] }> {
+    return this.request(`/__mockr/mem-sessions/${id}`);
+  }
+
+  async deleteMemSession(id: string): Promise<void> {
+    await this.request(`/__mockr/mem-sessions/${id}`, { method: 'DELETE' });
+  }
+
+  async activateMemSession(id: string, mode: 'record' | 'replay'): Promise<void> {
+    await this.request(`/__mockr/mem-sessions/${id}/activate`, {
+      method: 'POST',
+      body: JSON.stringify({ mode }),
+    });
+  }
+
+  async deactivateMemSession(): Promise<void> {
+    await this.request('/__mockr/mem-sessions/deactivate', { method: 'POST' });
+  }
+
+  async clearMemSession(id: string): Promise<void> {
+    await this.request(`/__mockr/mem-sessions/${id}/clear`, { method: 'POST' });
+  }
+}
+
+export interface MemSessionInfo {
+  id: string;
+  name: string;
+  createdAt: number;
+  entryCount: number;
+}
+
+export interface MemSessionActive {
+  id: string;
+  name: string;
+  mode: 'record' | 'replay';
+}
+
+export interface MemSessionEntry {
+  key: string;
+  status: number;
+  headers: Record<string, string>;
+  body: unknown;
+  contentType: string;
+  recordedAt?: number;
 }

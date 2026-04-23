@@ -2,6 +2,7 @@ import type { ServerResponse } from 'node:http';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
 import type { Recorder } from './recorder.js';
+import type { MemorySessionStore } from './memory-session.js';
 import type { MatchFn } from './router.js';
 import type { MockrRequest, HandlerResult, HandlerContext, ParseableSchema, EndpointHandle } from './types.js';
 import { createEndpointHandle } from './endpoint-handle.js';
@@ -31,6 +32,7 @@ interface ControlRoutesConfig {
   mocksDir: string;
   serverFile: string | null;
   scenarios: Record<string, unknown>;
+  memorySessions: MemorySessionStore;
 }
 
 /**
@@ -43,7 +45,7 @@ export async function handleControlRoute(
   res: ServerResponse,
   config: ControlRoutesConfig,
 ): Promise<boolean> {
-  const { recorder, endpoints, mocksDir, serverFile, scenarios } = config;
+  const { recorder, endpoints, mocksDir, serverFile, scenarios, memorySessions } = config;
 
   // Scenario switching
   if (path === '/__mockr/scenario' && method === 'POST') {
@@ -56,6 +58,10 @@ export async function handleControlRoute(
     handleCorsOptions(res);
     return true;
   }
+
+  // In-memory replay sessions — always available, independent of disk recorder
+  const memSessionRouted = await handleMemSessionRoutes(path, method, body, res, memorySessions);
+  if (memSessionRouted) return true;
 
   if (!recorder) {
     sendCorsJson(res, 400, { error: 'Recorder not enabled. Use --recorder flag or recorder config option.' });
@@ -277,6 +283,90 @@ export async function handleControlRoute(
   // Catch-all
   sendCorsJson(res, 404, { error: `Unknown recorder route: ${method} ${path}` });
   return true;
+}
+
+async function handleMemSessionRoutes(
+  path: string,
+  method: string,
+  body: unknown,
+  res: ServerResponse,
+  store: MemorySessionStore,
+): Promise<boolean> {
+  if (!path.startsWith('/__mockr/mem-sessions')) return false;
+
+  // POST /__mockr/mem-sessions — create
+  if (path === '/__mockr/mem-sessions' && method === 'POST') {
+    const reqBody = body as { name?: string } | undefined;
+    const name = reqBody?.name || `session-${Date.now()}`;
+    const s = store.create(name);
+    sendCorsJson(res, 200, store.info(s));
+    return true;
+  }
+
+  // GET /__mockr/mem-sessions — list
+  if (path === '/__mockr/mem-sessions' && method === 'GET') {
+    const active = store.getActive();
+    sendCorsJson(res, 200, {
+      sessions: store.list().map((s) => store.info(s)),
+      active: active ? { id: active.session.id, name: active.session.name, mode: active.mode } : null,
+    });
+    return true;
+  }
+
+  // POST /__mockr/mem-sessions/deactivate
+  if (path === '/__mockr/mem-sessions/deactivate' && method === 'POST') {
+    store.setActive(null, 'off');
+    sendCorsJson(res, 200, { active: null });
+    return true;
+  }
+
+  // Routes on a single session: /__mockr/mem-sessions/:id[/action]
+  const rest = path.slice('/__mockr/mem-sessions/'.length);
+  if (rest.length > 0) {
+    const [id, action] = rest.split('/');
+
+    if (!action) {
+      if (method === 'GET') {
+        const s = store.get(id);
+        if (!s) { sendCorsJson(res, 404, { error: 'Session not found' }); return true; }
+        sendCorsJson(res, 200, {
+          ...store.info(s),
+          entries: [...s.entries.entries()].map(([key, value]) => ({ key, ...value })),
+        });
+        return true;
+      }
+      if (method === 'DELETE') {
+        const ok = store.delete(id);
+        sendCorsJson(res, ok ? 200 : 404, ok ? { deleted: true } : { error: 'Session not found' });
+        return true;
+      }
+    }
+
+    if (action === 'activate' && method === 'POST') {
+      const reqBody = body as { mode?: 'record' | 'replay' } | undefined;
+      const mode = reqBody?.mode;
+      if (mode !== 'record' && mode !== 'replay') {
+        sendCorsJson(res, 400, { error: `mode must be 'record' or 'replay'` });
+        return true;
+      }
+      try {
+        store.setActive(id, mode);
+        sendCorsJson(res, 200, { active: { id, mode } });
+      } catch {
+        sendCorsJson(res, 404, { error: 'Session not found' });
+      }
+      return true;
+    }
+
+    if (action === 'clear' && method === 'POST') {
+      if (!store.get(id)) { sendCorsJson(res, 404, { error: 'Session not found' }); return true; }
+      store.clear(id);
+      sendCorsJson(res, 200, { cleared: true });
+      return true;
+    }
+  }
+
+  return false;
 }
 
 async function handleMap(

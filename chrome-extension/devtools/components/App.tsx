@@ -6,8 +6,9 @@ import { Header } from './Header.js';
 import { Toolbar } from './Toolbar.js';
 import { EntriesTable } from './EntriesTable.js';
 import { MockedTab } from './MockedTab.js';
+import { SessionsTab } from './SessionsTab.js';
 
-const TABS = ['Recording', 'Mocked'] as const;
+const TABS = ['Recording', 'Mocked', 'Sessions'] as const;
 
 export function App() {
   const [serverUrl, setServerUrl] = useState('http://localhost:4000');
@@ -130,6 +131,10 @@ export function App() {
 
       {activeTab === 'Mocked' && (
         <MockedTab api={api} editorScheme={editorScheme} />
+      )}
+
+      {activeTab === 'Sessions' && (
+        <SessionsTab api={api} />
       )}
     </div>
   );

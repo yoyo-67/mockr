@@ -1328,7 +1328,7 @@ var require_react_dom_development = __commonJS({
         return dispatcher;
       }
       "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ && "function" === typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart && __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart(Error());
-      var React4 = require_react(), Internals = {
+      var React5 = require_react(), Internals = {
         d: {
           f: noop,
           r: function() {
@@ -1346,7 +1346,7 @@ var require_react_dom_development = __commonJS({
         },
         p: 0,
         findDOMNode: null
-      }, REACT_PORTAL_TYPE = Symbol.for("react.portal"), ReactSharedInternals = React4.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+      }, REACT_PORTAL_TYPE = Symbol.for("react.portal"), ReactSharedInternals = React5.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
       "function" === typeof Map && null != Map.prototype && "function" === typeof Map.prototype.forEach && "function" === typeof Set && null != Set.prototype && "function" === typeof Set.prototype.clear && "function" === typeof Set.prototype.forEach || console.error(
         "React depends on Map and Set built-in types. Make sure that you load a polyfill in older browsers. https://reactjs.org/link/react-polyfills"
       );
@@ -2881,7 +2881,7 @@ var require_react_dom_client_development = __commonJS({
         "number" === type && getActiveElement(node.ownerDocument) === node || node.defaultValue === "" + value || (node.defaultValue = "" + value);
       }
       function validateOptionProps(element, props) {
-        null == props.value && ("object" === typeof props.children && null !== props.children ? React4.Children.forEach(props.children, function(child) {
+        null == props.value && ("object" === typeof props.children && null !== props.children ? React5.Children.forEach(props.children, function(child) {
           null == child || "string" === typeof child || "number" === typeof child || "bigint" === typeof child || didWarnInvalidChild || (didWarnInvalidChild = true, console.error(
             "Cannot infer the option value of complex children. Pass a `value` prop or use a plain string as children to <option>."
           ));
@@ -18513,14 +18513,14 @@ var require_react_dom_client_development = __commonJS({
         ));
       }
       "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ && "function" === typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart && __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart(Error());
-      var Scheduler = require_scheduler(), React4 = require_react(), ReactDOM = require_react_dom(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
+      var Scheduler = require_scheduler(), React5 = require_react(), ReactDOM = require_react_dom(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
       Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = Symbol.for("react.activity");
       Symbol.for("react.legacy_hidden");
       Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel");
       Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React4.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, ReactDOMSharedInternals = ReactDOM.__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, NotPending = Object.freeze({
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React5.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, ReactDOMSharedInternals = ReactDOM.__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, NotPending = Object.freeze({
         pending: false,
         data: null,
         method: null,
@@ -21308,7 +21308,7 @@ var require_react_dom_client_development = __commonJS({
         }
       };
       (function() {
-        var isomorphicReactPackageVersion = React4.version;
+        var isomorphicReactPackageVersion = React5.version;
         if ("19.2.4" !== isomorphicReactPackageVersion)
           throw Error(
             'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' + (isomorphicReactPackageVersion + "\n  - react-dom:  19.2.4\nLearn more: https://react.dev/warnings/version-mismatch")
@@ -21662,18 +21662,18 @@ var require_react_jsx_runtime_development = __commonJS({
       function isValidElement(object) {
         return "object" === typeof object && null !== object && object.$$typeof === REACT_ELEMENT_TYPE;
       }
-      var React4 = require_react(), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), ReactSharedInternals = React4.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
+      var React5 = require_react(), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), ReactSharedInternals = React5.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
         return null;
       };
-      React4 = {
+      React5 = {
         react_stack_bottom_frame: function(callStackForError) {
           return callStackForError();
         }
       };
       var specialPropKeyWarningShown;
       var didWarnAboutElementRef = {};
-      var unknownOwnerDebugStack = React4.react_stack_bottom_frame.bind(
-        React4,
+      var unknownOwnerDebugStack = React5.react_stack_bottom_frame.bind(
+        React5,
         UnknownOwner
       )();
       var unknownOwnerDebugTask = createTask(getTaskName(UnknownOwner));
@@ -21721,7 +21721,7 @@ var require_jsx_runtime = __commonJS({
 var import_client = __toESM(require_client(), 1);
 
 // devtools/components/App.tsx
-var import_react5 = __toESM(require_react(), 1);
+var import_react6 = __toESM(require_react(), 1);
 
 // shared/api.ts
 var MockrApi = class {
@@ -21810,6 +21810,34 @@ var MockrApi = class {
       method: "POST",
       body: JSON.stringify({ url, enabled, method })
     });
+  }
+  // In-memory replay sessions
+  async createMemSession(name) {
+    return this.request("/__mockr/mem-sessions", {
+      method: "POST",
+      body: JSON.stringify({ name })
+    });
+  }
+  async listMemSessions() {
+    return this.request("/__mockr/mem-sessions");
+  }
+  async getMemSession(id) {
+    return this.request(`/__mockr/mem-sessions/${id}`);
+  }
+  async deleteMemSession(id) {
+    await this.request(`/__mockr/mem-sessions/${id}`, { method: "DELETE" });
+  }
+  async activateMemSession(id, mode) {
+    await this.request(`/__mockr/mem-sessions/${id}/activate`, {
+      method: "POST",
+      body: JSON.stringify({ mode })
+    });
+  }
+  async deactivateMemSession() {
+    await this.request("/__mockr/mem-sessions/deactivate", { method: "POST" });
+  }
+  async clearMemSession(id) {
+    await this.request(`/__mockr/mem-sessions/${id}/clear`, { method: "POST" });
   }
 };
 
@@ -22537,15 +22565,225 @@ function EndpointRow({ ep, api, editorScheme, onToggle, onTypeChange, onDelete, 
   ] });
 }
 
-// devtools/components/App.tsx
+// devtools/components/SessionsTab.tsx
+var import_react5 = __toESM(require_react(), 1);
 var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
-var TABS = ["Recording", "Mocked"];
+function SessionsTab({ api }) {
+  const [sessions, setSessions] = (0, import_react5.useState)([]);
+  const [active, setActive] = (0, import_react5.useState)(null);
+  const [newName, setNewName] = (0, import_react5.useState)("");
+  const [status, setStatus] = (0, import_react5.useState)("");
+  const [expandedId, setExpandedId] = (0, import_react5.useState)(null);
+  const [entries, setEntries] = (0, import_react5.useState)([]);
+  const load = (0, import_react5.useCallback)(async () => {
+    try {
+      const res = await api.listMemSessions();
+      setSessions(res.sessions);
+      setActive(res.active);
+    } catch (err) {
+      setStatus(`Error: ${err.message}`);
+    }
+  }, [api]);
+  (0, import_react5.useEffect)(() => {
+    load();
+  }, [load]);
+  (0, import_react5.useEffect)(() => {
+    if (!active || active.mode !== "record") return;
+    const interval = setInterval(load, 1500);
+    return () => clearInterval(interval);
+  }, [active, load]);
+  const loadEntries = (0, import_react5.useCallback)(async (id) => {
+    try {
+      const detail = await api.getMemSession(id);
+      setEntries(detail.entries);
+    } catch (err) {
+      setStatus(`Error: ${err.message}`);
+    }
+  }, [api]);
+  const handleCreate = async () => {
+    const name = newName.trim() || `session-${(/* @__PURE__ */ new Date()).toISOString().slice(11, 19)}`;
+    try {
+      await api.createMemSession(name);
+      setNewName("");
+      setStatus(`Created: ${name}`);
+      load();
+    } catch (err) {
+      setStatus(`Error: ${err.message}`);
+    }
+  };
+  const handleActivate = async (id, mode) => {
+    try {
+      await api.activateMemSession(id, mode);
+      setStatus(`${mode === "record" ? "Recording" : "Replaying"} session`);
+      load();
+    } catch (err) {
+      setStatus(`Error: ${err.message}`);
+    }
+  };
+  const handleDeactivate = async () => {
+    try {
+      await api.deactivateMemSession();
+      setStatus("Deactivated");
+      load();
+    } catch (err) {
+      setStatus(`Error: ${err.message}`);
+    }
+  };
+  const handleDelete = async (id) => {
+    try {
+      await api.deleteMemSession(id);
+      if (expandedId === id) setExpandedId(null);
+      setStatus("Deleted");
+      load();
+    } catch (err) {
+      setStatus(`Error: ${err.message}`);
+    }
+  };
+  const handleClear = async (id) => {
+    try {
+      await api.clearMemSession(id);
+      setStatus("Cleared entries");
+      load();
+      if (expandedId === id) loadEntries(id);
+    } catch (err) {
+      setStatus(`Error: ${err.message}`);
+    }
+  };
+  const handleExpand = (id) => {
+    if (expandedId === id) {
+      setExpandedId(null);
+      setEntries([]);
+    } else {
+      setExpandedId(id);
+      loadEntries(id);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "flex flex-col flex-1 min-h-0 overflow-auto", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50", children: active ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: `text-[10px] font-semibold px-1.5 py-0.5 rounded ${active.mode === "record" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`, children: active.mode === "record" ? "\u25CF REC" : "\u25B6 REPLAY" }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "text-xs text-gray-700 font-mono", children: active.name }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "button",
+        {
+          onClick: handleDeactivate,
+          className: "ml-auto px-2 py-0.5 text-[10px] rounded border border-gray-300 text-gray-600 hover:bg-gray-100",
+          children: "Deactivate"
+        }
+      )
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "text-xs text-gray-400", children: "No active session" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "flex items-center gap-2 px-3 py-2 border-b border-gray-200", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "input",
+        {
+          type: "text",
+          value: newName,
+          onChange: (e) => setNewName(e.target.value),
+          onKeyDown: (e) => {
+            if (e.key === "Enter") handleCreate();
+          },
+          placeholder: "New session name...",
+          className: "text-xs px-2 py-1 border border-gray-300 rounded flex-1"
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "button",
+        {
+          onClick: handleCreate,
+          className: "px-2.5 py-1 text-xs rounded bg-purple-600 text-white hover:bg-purple-700",
+          children: "Create"
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "button",
+        {
+          onClick: load,
+          className: "px-2.5 py-1 text-xs rounded border border-gray-300 text-gray-500 hover:bg-gray-100",
+          children: "Refresh"
+        }
+      ),
+      status && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "text-[10px] text-gray-500 truncate max-w-xs", children: status })
+    ] }),
+    sessions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "px-3 py-8 text-center text-xs text-gray-400", children: [
+      "No sessions yet. Create one, activate it in ",
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("strong", { children: "record" }),
+      " mode, load your page, then switch to ",
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("strong", { children: "replay" }),
+      " for instant responses."
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("table", { className: "w-full border-collapse text-[11px]", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("tbody", { children: sessions.map((s) => {
+      const isActive = active?.id === s.id;
+      const isExpanded = expandedId === s.id;
+      return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_react5.default.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("tr", { className: `border-b border-gray-100 hover:bg-gray-50 ${isActive ? "bg-purple-50" : ""}`, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("td", { className: "w-6 px-2 py-1 text-center", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            "button",
+            {
+              onClick: () => handleExpand(s.id),
+              className: "text-[10px] text-gray-400 hover:text-gray-700",
+              children: isExpanded ? "\u25BC" : "\u25B6"
+            }
+          ) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("td", { className: "px-3 py-1", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "font-mono text-gray-700", children: s.name }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("td", { className: "px-3 py-1 text-gray-500 whitespace-nowrap", children: [
+            s.entryCount,
+            " ",
+            s.entryCount === 1 ? "entry" : "entries"
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("td", { className: "px-3 py-1 whitespace-nowrap", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "flex items-center gap-1", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+              "button",
+              {
+                onClick: () => handleActivate(s.id, "record"),
+                disabled: isActive && active?.mode === "record",
+                className: `px-2 py-0.5 text-[10px] rounded border ${isActive && active?.mode === "record" ? "border-red-500 bg-red-500 text-white cursor-not-allowed" : "border-red-500 text-red-600 hover:bg-red-500 hover:text-white"}`,
+                children: "\u25CF Record"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+              "button",
+              {
+                onClick: () => handleActivate(s.id, "replay"),
+                disabled: isActive && active?.mode === "replay",
+                className: `px-2 py-0.5 text-[10px] rounded border ${isActive && active?.mode === "replay" ? "border-green-600 bg-green-600 text-white cursor-not-allowed" : "border-green-600 text-green-600 hover:bg-green-600 hover:text-white"}`,
+                children: "\u25B6 Replay"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+              "button",
+              {
+                onClick: () => handleClear(s.id),
+                className: "px-2 py-0.5 text-[10px] rounded border border-gray-300 text-gray-500 hover:bg-gray-100",
+                title: "Clear all cached entries",
+                children: "Clear"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+              "button",
+              {
+                onClick: () => handleDelete(s.id),
+                className: "px-1.5 py-0.5 text-[10px] rounded border border-red-400 text-red-500 hover:bg-red-500 hover:text-white",
+                children: "\xD7"
+              }
+            )
+          ] }) })
+        ] }),
+        isExpanded && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("td", { colSpan: 4, className: "px-3 py-2 bg-gray-50 border-b border-gray-100", children: entries.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "text-[10px] text-gray-400 italic", children: "No cached entries" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "flex flex-col gap-0.5", children: entries.map((e, i) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "flex items-center gap-2 text-[10px] font-mono", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: `px-1 rounded ${e.status >= 200 && e.status < 300 ? "bg-green-100 text-green-700" : e.status >= 400 ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600"}`, children: e.status }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "text-gray-700 truncate", children: e.key })
+        ] }, i)) }) }) })
+      ] }, s.id);
+    }) }) })
+  ] });
+}
+
+// devtools/components/App.tsx
+var import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
+var TABS = ["Recording", "Mocked", "Sessions"];
 function App() {
-  const [serverUrl, setServerUrl] = (0, import_react5.useState)("http://localhost:4000");
-  const [editorScheme, setEditorScheme] = (0, import_react5.useState)("vscode");
-  const [activeTab, setActiveTab] = (0, import_react5.useState)("Recording");
-  const [mapLoading, setMapLoading] = (0, import_react5.useState)(false);
-  const api = (0, import_react5.useMemo)(() => new MockrApi(serverUrl), [serverUrl]);
+  const [serverUrl, setServerUrl] = (0, import_react6.useState)("http://localhost:4000");
+  const [editorScheme, setEditorScheme] = (0, import_react6.useState)("vscode");
+  const [activeTab, setActiveTab] = (0, import_react6.useState)("Recording");
+  const [mapLoading, setMapLoading] = (0, import_react6.useState)(false);
+  const api = (0, import_react6.useMemo)(() => new MockrApi(serverUrl), [serverUrl]);
   const store = useStore();
   const {
     entries,
@@ -22567,28 +22805,28 @@ function App() {
     clearSelection
   } = store;
   useRecorder(isRecording, entries, addEntry, clearEntries, preserveLogs);
-  (0, import_react5.useState)(() => {
+  (0, import_react6.useState)(() => {
     chrome.storage.local.get(["mockrServerUrl", "mockrEditorScheme"], (r) => {
       if (r.mockrServerUrl) setServerUrl(r.mockrServerUrl);
       if (r.mockrEditorScheme) setEditorScheme(r.mockrEditorScheme);
     });
   });
-  const handleServerUrlChange = (0, import_react5.useCallback)((url) => {
+  const handleServerUrlChange = (0, import_react6.useCallback)((url) => {
     setServerUrl(url);
     chrome.storage.local.set({ mockrServerUrl: url });
   }, []);
-  const handleEditorSchemeChange = (0, import_react5.useCallback)((s) => {
+  const handleEditorSchemeChange = (0, import_react6.useCallback)((s) => {
     setEditorScheme(s);
     chrome.storage.local.set({ mockrEditorScheme: s });
   }, []);
-  const handleRecord = (0, import_react5.useCallback)(() => {
+  const handleRecord = (0, import_react6.useCallback)(() => {
     clearEntries();
     setIsRecording(true);
   }, [clearEntries, setIsRecording]);
-  const handleStop = (0, import_react5.useCallback)(() => {
+  const handleStop = (0, import_react6.useCallback)(() => {
     setIsRecording(false);
   }, [setIsRecording]);
-  const handleMap = (0, import_react5.useCallback)(async () => {
+  const handleMap = (0, import_react6.useCallback)(async () => {
     if (selectedIds.size === 0) return;
     setMapLoading(true);
     try {
@@ -22607,9 +22845,9 @@ function App() {
     }
     setMapLoading(false);
   }, [selectedIds, entries, api, clearSelection]);
-  const totalSize = (0, import_react5.useMemo)(() => entries.reduce((s, e) => s + e.size, 0), [entries]);
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "flex flex-col h-screen overflow-hidden text-xs font-sans", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+  const totalSize = (0, import_react6.useMemo)(() => entries.reduce((s, e) => s + e.size, 0), [entries]);
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "flex flex-col h-screen overflow-hidden text-xs font-sans", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
       Header,
       {
         serverUrl,
@@ -22618,7 +22856,7 @@ function App() {
         onEditorSchemeChange: handleEditorSchemeChange
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
       Toolbar,
       {
         isRecording,
@@ -22634,7 +22872,7 @@ function App() {
         mapLoading
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "flex border-b border-gray-200", children: TABS.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "flex border-b border-gray-200", children: TABS.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
       "button",
       {
         onClick: () => setActiveTab(tab),
@@ -22643,7 +22881,7 @@ function App() {
       },
       tab
     )) }),
-    activeTab === "Recording" && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+    activeTab === "Recording" && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
       EntriesTable,
       {
         entries,
@@ -22659,14 +22897,15 @@ function App() {
         onExpand: setExpandedId
       }
     ),
-    activeTab === "Mocked" && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(MockedTab, { api, editorScheme })
+    activeTab === "Mocked" && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(MockedTab, { api, editorScheme }),
+    activeTab === "Sessions" && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(SessionsTab, { api })
   ] });
 }
 
 // devtools/panel.tsx
-var import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
 var root = (0, import_client.createRoot)(document.getElementById("root"));
-root.render(/* @__PURE__ */ (0, import_jsx_runtime6.jsx)(App, {}));
+root.render(/* @__PURE__ */ (0, import_jsx_runtime7.jsx)(App, {}));
 /*! Bundled license information:
 
 scheduler/cjs/scheduler.development.js:

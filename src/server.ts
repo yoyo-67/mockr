@@ -15,6 +15,7 @@ import type {
 import { createEndpointHandle } from './endpoint-handle.js';
 import { createMatcher } from './router.js';
 import { createRecorder, type Recorder } from './recorder.js';
+import { createMemorySessionStore, type MemorySessionStore } from './memory-session.js';
 import { parseQuery, getPath, readBody, sendJson, sendRaw } from './http-utils.js';
 import { handleControlRoute, type InternalEndpoint } from './control-routes.js';
 
@@ -81,6 +82,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
   const endpoints: InternalEndpoint[] = [];
   const middlewares: Middleware[] = [...(config.middleware || [])];
   const scenarios = config.scenarios || {};
+  const memorySessions: MemorySessionStore = createMemorySessionStore();
   let proxyEnabled = !!config.proxy;
   let proxyTarget = config.proxy?.target ?? null;
   const proxyTargets = config.proxy?.targets ?? null;
@@ -283,7 +285,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     // Control routes (/__mockr/*)
     if (path.startsWith('/__mockr/')) {
       const handled = await handleControlRoute(path, method, body, res, {
-        recorder, endpoints, mocksDir, serverFile, scenarios: scenarios as Record<string, unknown>,
+        recorder, endpoints, mocksDir, serverFile, scenarios: scenarios as Record<string, unknown>, memorySessions,
       });
       if (handled) return;
     }
@@ -364,13 +366,34 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       }
     }
 
-    // 2. Try proxy
-    if (!handlerResult && config.proxy && proxyEnabled) {
-      handlerResult = await handleProxy(method, fullUrl, reqHeaders, body);
-      if (handlerResult) source = 'proxy';
+    // 2. Try memory-session replay (cache hit serves instantly)
+    if (!handlerResult) {
+      const cached = memorySessions.lookupResponse({ method, path, query });
+      if (cached) {
+        handlerResult = { status: cached.status, body: cached.body, headers: cached.headers };
+        source = 'mock';
+      }
     }
 
-    // 3. 404
+    // 3. Try proxy
+    if (!handlerResult && config.proxy && proxyEnabled) {
+      handlerResult = await handleProxy(method, fullUrl, reqHeaders, body);
+      if (handlerResult) {
+        source = 'proxy';
+        const contentType = (handlerResult.headers && handlerResult.headers['content-type']) || 'application/json';
+        memorySessions.recordResponse(
+          { method, path, query },
+          {
+            status: handlerResult.status || 200,
+            headers: handlerResult.headers || {},
+            body: handlerResult.body,
+            contentType,
+          },
+        );
+      }
+    }
+
+    // 4. 404
     if (!handlerResult) handlerResult = { status: 404, body: { error: 'Not found' } };
 
     // Post-middleware
@@ -480,6 +503,42 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
 
         // TUI
         async tui() { const { tui: tuiFn } = await import('./tui.js'); await tuiFn(mockrServer as unknown as MockrServer); },
+
+        // In-memory replay sessions
+        sessions: {
+          create(name: string) {
+            const s = memorySessions.create(name);
+            return memorySessions.info(s);
+          },
+          list() {
+            return memorySessions.list().map((s) => memorySessions.info(s));
+          },
+          get(id: string) {
+            const s = memorySessions.get(id);
+            if (!s) return undefined;
+            return {
+              ...memorySessions.info(s),
+              entries: [...s.entries.entries()].map(([key, value]) => ({ key, ...value })),
+            };
+          },
+          delete(id: string) {
+            return memorySessions.delete(id);
+          },
+          activate(id: string, mode: 'record' | 'replay') {
+            memorySessions.setActive(id, mode);
+          },
+          deactivate() {
+            memorySessions.setActive(null, 'off');
+          },
+          clear(id: string) {
+            memorySessions.clear(id);
+          },
+          get active() {
+            const a = memorySessions.getActive();
+            if (!a) return null;
+            return { id: a.session.id, name: a.session.name, mode: a.mode };
+          },
+        },
 
         // Recorder
         get recorder() {

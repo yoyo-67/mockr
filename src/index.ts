@@ -24,6 +24,15 @@ export type {
   SessionMeta,
   RecordInput,
 } from './recorder.js';
+export { createMemorySessionStore } from './memory-session.js';
+export type {
+  MemorySession,
+  MemorySessionStore,
+  CachedResponse,
+  SessionMode,
+  SessionInfo as MemorySessionStoreInfo,
+} from './memory-session.js';
+export type { MemorySessionInfo, MemorySessionEntry } from './types.js';
 
 import type { ParseableSchema, ValidatedHandler } from './types.js';
 

@@ -164,4 +164,32 @@ export interface MockrServer<TEndpoints = Record<string, unknown>> {
     loadSession(sessionId: string): Promise<{ id: string; name: string; entries: { url: string; method: string; status: number; size: number }[] }>;
     mapToFile(sessionId: string, entryIds: string[], options?: { generateTypes?: boolean }): Promise<{ mapped: { url: string; method: string; bodyFile: string; typesFile?: string }[] }>;
   } | null;
+
+  // In-memory replay sessions — record proxy responses once, replay them instantly
+  sessions: {
+    create(name: string): MemorySessionInfo;
+    list(): MemorySessionInfo[];
+    get(id: string): (MemorySessionInfo & { entries: MemorySessionEntry[] }) | undefined;
+    delete(id: string): boolean;
+    activate(id: string, mode: 'record' | 'replay'): void;
+    deactivate(): void;
+    clear(id: string): void;
+    active: { id: string; name: string; mode: 'record' | 'replay' } | null;
+  };
+}
+
+export interface MemorySessionInfo {
+  id: string;
+  name: string;
+  createdAt: number;
+  entryCount: number;
+}
+
+export interface MemorySessionEntry {
+  key: string;
+  status: number;
+  headers: Record<string, string>;
+  body: unknown;
+  contentType: string;
+  recordedAt?: number;
 }
