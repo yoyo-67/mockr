@@ -367,10 +367,11 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     }
 
     // 2. Try memory-session replay (cache hit serves instantly)
+    let cachedHit: ReturnType<typeof memorySessions.lookupResponse> = undefined;
     if (!handlerResult) {
-      const cached = memorySessions.lookupResponse({ method, path, query });
-      if (cached) {
-        handlerResult = { status: cached.status, body: cached.body, headers: cached.headers };
+      cachedHit = memorySessions.lookupResponse({ method, path, query });
+      if (cachedHit) {
+        handlerResult = { status: cachedHit.status, body: cachedHit.body, headers: cachedHit.headers };
         source = 'mock';
       }
     }
@@ -381,12 +382,18 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       if (handlerResult) {
         source = 'proxy';
         const contentType = (handlerResult.headers && handlerResult.headers['content-type']) || 'application/json';
+        // Pre-serialize once at record time — replay hits skip JSON.stringify entirely.
+        const bodyText =
+          typeof handlerResult.body === 'string'
+            ? handlerResult.body
+            : JSON.stringify(handlerResult.body);
         memorySessions.recordResponse(
           { method, path, query },
           {
             status: handlerResult.status || 200,
             headers: handlerResult.headers || {},
             body: handlerResult.body,
+            bodyText,
             contentType,
           },
         );
@@ -411,6 +418,13 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
 
     if ('raw' in handlerResult && handlerResult.raw) {
       sendRaw(res, status, handlerResult.body as string | Buffer, handlerResult.headers as Record<string, string>);
+    } else if (cachedHit && cachedHit.bodyText !== undefined) {
+      // Fast path: serve the pre-serialized cached body, no re-stringify.
+      const headers: Record<string, string> = {
+        'Content-Type': cachedHit.contentType || 'application/json',
+        ...cachedHit.headers,
+      };
+      sendRaw(res, status, cachedHit.bodyText, headers);
     } else {
       sendJson(res, status, handlerResult.body, handlerResult.headers);
     }
