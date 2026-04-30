@@ -158,4 +158,57 @@ const server = await mockr<Endpoints>({
     expect(containsText(src, 'handler')).toBe(true);
     expect(containsText(src, 'dataFile')).toBe(false);
   });
+
+  it('emits handler({...}) factory (not raw function) when changing to handler', async () => {
+    await addEndpointToServerFile(serverFile, {
+      url: '/api/items',
+      method: 'GET',
+      filePath: './mocks/api-items.json',
+    });
+    await changeToHandlerInServerFile(serverFile, '/api/items');
+
+    const src = await readFile(serverFile, 'utf-8');
+    expect(src).toMatch(/handler\(\s*\{[\s\S]*fn:/);
+    // Adds runtime `handler` import from 'mockr' / '@yoyo-org/mockr'.
+    expect(src).toMatch(/import\s*\{[^}]*\bhandler\b[^}]*\}\s*from\s*['"](?:mockr|@yoyo-org\/mockr)['"]/);
+  });
+
+  it('emits typed file<T>() factory and array Endpoints entry for array dataFile', async () => {
+    await mkdir(join(tmpDir, 'mocks'), { recursive: true });
+    const typesFile = join(tmpDir, 'mocks', 'api-items.d.ts');
+    await writeFile(typesFile, 'export interface ApiItems { id: number }', 'utf-8');
+
+    await addEndpointToServerFile(serverFile, {
+      url: '/api/items',
+      method: 'GET',
+      filePath: './mocks/api-items.json',
+      typesFile,
+      isArray: true,
+    });
+
+    const src = await readFile(serverFile, 'utf-8');
+    // The typeName is derived via urlToTypeName: '/api/items' → 'ApiItems'.
+    expect(src).toMatch(/dataFile:\s*file<ApiItems\[\]>\(['"]\.\/mocks\/api-items\.json['"]\)/);
+    expect(src).toMatch(/['"]\/api\/items['"]\s*:\s*ApiItems\[\]/);
+    expect(src).toMatch(/import\s*\{[^}]*\bfile\b[^}]*\}\s*from\s*['"](?:mockr|@yoyo-org\/mockr)['"]/);
+  });
+
+  it('emits typed file<T>() factory (non-array) for record dataFile', async () => {
+    await mkdir(join(tmpDir, 'mocks'), { recursive: true });
+    const typesFile = join(tmpDir, 'mocks', 'config.d.ts');
+    await writeFile(typesFile, 'export interface ApiConfig { theme: string }', 'utf-8');
+
+    await addEndpointToServerFile(serverFile, {
+      url: '/api/config',
+      method: 'GET',
+      filePath: './mocks/config.json',
+      typesFile,
+      isArray: false,
+    });
+
+    const src = await readFile(serverFile, 'utf-8');
+    // urlToTypeName('/api/config') → 'ApiConfig'.
+    expect(src).toMatch(/dataFile:\s*file<ApiConfig>\(['"]\.\/mocks\/config\.json['"]\)/);
+    expect(src).toMatch(/['"]\/api\/config['"]\s*:\s*ApiConfig(?!\[)/);
+  });
 });

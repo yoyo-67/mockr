@@ -593,7 +593,7 @@ async function handleMap(
 
     // Patch server file
     if (serverFile) {
-      try { await addEndpointToServerFile(serverFile, { url: pathname, method: epMethod, filePath: bodyFileRelative, typesFile: typesAbsPath }); }
+      try { await addEndpointToServerFile(serverFile, { url: pathname, method: epMethod, filePath: bodyFileRelative, typesFile: typesAbsPath, isArray }); }
       catch (err) { console.error('[mockr] Failed to patch server file:', err); }
     }
 
