@@ -205,6 +205,65 @@ endpoints: [
 ]
 ```
 
+### Splitting mocks across files
+
+As your mocks grow, split them into typed groups using `endpoints<T>()`. Each group declares its own `Endpoints` slice; the top-level config composes them with intersection.
+
+```ts
+// src/mocks/cart.ts
+import { endpoints, handler } from 'mockr';
+import { z } from 'zod';
+
+interface CartItem { id: number; product_id: number; quantity: number }
+
+export type CartEndpoints = {
+  '/internal/cart': CartItem[];
+};
+
+export const cartMocks = endpoints<CartEndpoints>([
+  { url: '/internal/cart', data: [] },
+  {
+    url: '/api/cart',
+    method: 'POST',
+    handler: handler({
+      body: z.object({ product_id: z.number(), quantity: z.number() }),
+      fn: (req, ctx) => {
+        ctx.endpoint('/internal/cart').insert({
+          product_id: req.body.product_id,
+          quantity: req.body.quantity,
+        } as CartItem);
+        return { body: { ok: true } };
+      },
+    }),
+  },
+]);
+```
+
+```ts
+// src/mocks/orders.ts
+export type OrderEndpoints = {
+  '/internal/orders': Order[];
+};
+
+export const orderMocks = endpoints<OrderEndpoints>([ /* ... */ ]);
+```
+
+```ts
+// src/server.ts
+import { mockr } from 'mockr';
+import { cartMocks,  type CartEndpoints  } from './mocks/cart.js';
+import { orderMocks, type OrderEndpoints } from './mocks/orders.js';
+
+type Endpoints = CartEndpoints & OrderEndpoints;
+
+await mockr<Endpoints>({
+  port: 4000,
+  endpoints: [...cartMocks, ...orderMocks],
+});
+```
+
+`endpoints<T>()` is a runtime no-op — it only enforces shape per group at the type level. Top-level `mockr<E>()` keeps its explicit generic; groups don't replace it, they compose into it.
+
 ---
 
 ## Chrome Extension — Record & Map
