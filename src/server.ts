@@ -247,13 +247,24 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     if (body && method !== 'GET' && method !== 'HEAD') fetchOpts.body = JSON.stringify(body);
 
     const res = await fetch(targetUrl, fetchOpts);
-    const resHeaders: Record<string, string> = {};
-    const skipHeaders = new Set(['content-length', 'transfer-encoding', 'content-encoding']);
+    const resHeaders: Record<string, string | string[]> = {};
+    const skipHeaders = new Set(['content-length', 'transfer-encoding', 'content-encoding', 'set-cookie']);
     res.headers.forEach((val, key) => { if (!skipHeaders.has(key.toLowerCase())) resHeaders[key] = val; });
+    const setCookies = res.headers.getSetCookie?.() ?? [];
+    if (setCookies.length) {
+      // Strip Domain and Secure so cookies stick on localhost over HTTP.
+      resHeaders['set-cookie'] = setCookies.map((c) =>
+        c.replace(/;\s*Domain=[^;]+/i, '').replace(/;\s*Secure/i, ''),
+      );
+    }
 
     if (res.status >= 300 && res.status < 400) return { status: res.status, body: '', headers: resHeaders };
 
     const resBody = await res.text();
+    const ctRaw = resHeaders['content-type'];
+    const contentType = (typeof ctRaw === 'string' ? ctRaw : '').toLowerCase();
+    const isJson = contentType.includes('application/json') || contentType.includes('+json');
+    if (!isJson) return { raw: true, status: res.status, body: resBody, headers: resHeaders };
     let parsedBody: unknown;
     try { parsedBody = JSON.parse(resBody); } catch { parsedBody = resBody; }
     return { status: res.status, body: parsedBody, headers: resHeaders };
@@ -381,7 +392,8 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       handlerResult = await handleProxy(method, fullUrl, reqHeaders, body);
       if (handlerResult) {
         source = 'proxy';
-        const contentType = (handlerResult.headers && handlerResult.headers['content-type']) || 'application/json';
+        const ctHeader = handlerResult.headers && handlerResult.headers['content-type'];
+        const contentType = (typeof ctHeader === 'string' ? ctHeader : '') || 'application/json';
         // Pre-serialize once at record time — replay hits skip JSON.stringify entirely.
         const bodyText =
           typeof handlerResult.body === 'string'
@@ -417,10 +429,10 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     console.log(`  ${tag}  ${method.padEnd(6)} ${status} ${fullUrl} ${ms}ms`);
 
     if ('raw' in handlerResult && handlerResult.raw) {
-      sendRaw(res, status, handlerResult.body as string | Buffer, handlerResult.headers as Record<string, string>);
+      sendRaw(res, status, handlerResult.body as string | Buffer, handlerResult.headers);
     } else if (cachedHit && cachedHit.bodyText !== undefined) {
       // Fast path: serve the pre-serialized cached body, no re-stringify.
-      const headers: Record<string, string> = {
+      const headers: Record<string, string | string[]> = {
         'Content-Type': cachedHit.contentType || 'application/json',
         ...cachedHit.headers,
       };

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 export interface CachedResponse {
   status: number;
-  headers: Record<string, string>;
+  headers: Record<string, string | string[]>;
   body: unknown;
   /** Pre-serialized body (set on record). Avoids re-stringify on every replay hit. */
   bodyText?: string;

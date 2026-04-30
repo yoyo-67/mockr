@@ -40,21 +40,23 @@ export async function readBody(req: IncomingMessage): Promise<unknown> {
   });
 }
 
-export function sendJson(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) {
+function applyHeaders(res: ServerResponse, headers: Record<string, string | string[]>) {
+  for (const [k, v] of Object.entries(headers)) res.setHeader(k, v);
+}
+
+export function sendJson(res: ServerResponse, status: number, body: unknown, headers: Record<string, string | string[]> = {}) {
   const json = JSON.stringify(body);
-  res.writeHead(status, {
-    'Content-Type': 'application/json',
-    'Content-Length': Buffer.byteLength(json),
-    ...headers,
-  });
+  applyHeaders(res, headers);
+  if (!res.hasHeader('Content-Type')) res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Length', Buffer.byteLength(json));
+  res.writeHead(status);
   res.end(json);
 }
 
-export function sendRaw(res: ServerResponse, status: number, body: string | Buffer, headers: Record<string, string>) {
-  res.writeHead(status, {
-    'Content-Length': Buffer.byteLength(body),
-    ...headers,
-  });
+export function sendRaw(res: ServerResponse, status: number, body: string | Buffer, headers: Record<string, string | string[]>) {
+  applyHeaders(res, headers);
+  res.setHeader('Content-Length', Buffer.byteLength(body));
+  res.writeHead(status);
   res.end(body);
 }
 

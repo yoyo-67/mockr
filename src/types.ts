@@ -17,9 +17,9 @@ export interface MockrRequest<
 }
 
 export type HandlerResult =
-  | { body: unknown; status?: number; headers?: Record<string, string> }
-  | { status: number; body: unknown; headers?: Record<string, string> }
-  | { raw: true; body: string | Buffer; status: number; headers: Record<string, string> };
+  | { body: unknown; status?: number; headers?: Record<string, string | string[]> }
+  | { status: number; body: unknown; headers?: Record<string, string | string[]> }
+  | { raw: true; body: string | Buffer; status: number; headers: Record<string, string | string[]> };
 
 export interface HandlerContext<TEndpoints = Record<string, unknown>> {
   endpoints: [keyof TEndpoints] extends [never]
