@@ -18,6 +18,19 @@ npx tsx mock.ts
 
 No `tsconfig.json` or build step needed — `tsx` runs TypeScript directly.
 
+For dev work, use `tsx watch` so a save to your server file or any imported mock group respawns the process automatically:
+
+```jsonc
+// package.json
+{
+  "scripts": {
+    "dev": "tsx watch src/server.ts"
+  }
+}
+```
+
+`tsx watch` handles TS source changes (kill + respawn, ~100ms). JSON `dataFile` changes are handled in-process by mockr (debounced 100ms, no respawn) — don't add `--include 'src/**/*.json'`, it makes tsx restart on JSON too and competes with mockr's hot-reload.
+
 ## Quick example
 
 ```ts
