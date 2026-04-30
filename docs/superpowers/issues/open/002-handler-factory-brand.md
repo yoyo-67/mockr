@@ -17,7 +17,8 @@ Schemas in `body`/`query`/`params` slots flow generic → typed `req.body` / `re
 - [ ] Schema-bearing slots (`body`, `query`, `params`) flow to `fn`'s `req` parameter. Type test asserts: `handler({ body: zodSchema, fn: (req) => /* req.body typed */ })`.
 - [ ] `src/index.ts` re-exports `handler` and `HandlerSpec` from the new module. The old inline `handler` function in `index.ts:43-50` is removed.
 - [ ] Server invokes `spec.fn(req, ctx)` directly; the factory's role is purely type plumbing + branding.
-- [ ] Tests: `tests/handler-factory.test.ts` (brand presence, isHandlerSpec discrimination, slot preservation).
+- [ ] Runtime tests (TDD red → green) in `tests/handler-factory.test.ts`: brand presence, isHandlerSpec discrimination on factory output vs plain function, slot preservation.
+- [ ] Type tests via `expectTypeOf` in `tests/handler-factory.test-d.ts`: `handler({ body: zodSchema, fn })` types `req.body` as the schema's inferred output; `handler({ query, fn })` types `req.query`; `handler({ params, fn })` types `req.params`. Negative case with `// @ts-expect-error` for raw function passed where `HandlerSpec` is expected.
 - [ ] One existing example uses the factory shape end-to-end and runs.
 
 ## Blocked by

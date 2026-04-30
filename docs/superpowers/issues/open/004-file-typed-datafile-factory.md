@@ -17,7 +17,8 @@ Server accepts both branded `FileRef` and plain string for `dataFile` field — 
 - [ ] Type carries `T` via phantom `__type?: T` field that is never read at runtime.
 - [ ] Server's `dataFile` registration accepts both `string` and `FileRef`. When a `FileRef` is passed, `isFileRef` is true and `getFilePath` returns the underlying path.
 - [ ] `EndpointDef` types `dataFile: FileRef<T> | string`. When user passes `file<T[]>('./x.json')`, `server.endpoint('/url')` is `ListHandle<T>`. When user passes `file<T>('./x.json')` (object T), it is `RecordHandle<T>`.
-- [ ] Tests: `tests/file-factory.test.ts` (brand presence, path accessor, runtime identity), `tests/api-redesign.test-d.ts` includes a `file<T>()` type assertion.
+- [ ] Runtime tests (TDD red → green) in `tests/file-factory.test.ts`: brand presence, `getFilePath` returns input path, plain string is not a `FileRef`.
+- [ ] Type tests via `expectTypeOf` in `tests/file-factory.test-d.ts`: `file<Alert[]>('./x.json')` produces `FileRef<Alert[]>`; when passed to `dataFile`, resulting `server.endpoint('/url')` is `ListHandle<Alert>`; `file<Config>('./x.json')` produces `RecordHandle<Config>`. Negative case with `// @ts-expect-error` for `file<Alert[]>()` passed where `FileRef<{ x: 1 }>` is expected.
 - [ ] One example uses `file<T[]>('./data.json')` and the resulting handle is typed.
 - [ ] README documents the factory under "Typed dataFile".
 

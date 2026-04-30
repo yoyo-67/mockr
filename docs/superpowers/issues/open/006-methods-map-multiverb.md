@@ -17,7 +17,8 @@ Single endpoint entry can declare multiple HTTP verbs in a `methods` map. Replac
 - [ ] Conflict matrix at validator level (slice 8 wires it): `handler` + `methods` rejected, `method` + `methods` rejected.
 - [ ] Server dispatch: when request method matches a key in `methods`, invoke that handler. Otherwise fall through to `data`/`dataFile` default CRUD if present. Otherwise respond 405 with `Allow` header listing the keys present in `methods`.
 - [ ] `src/http-utils.ts` adds `send405(res, allowed)` helper.
-- [ ] Tests: `tests/methods-map.test.ts` covering: GET+POST from same entry; verb-not-in-map returns 405 with Allow; methods overrides default CRUD POST while default GET still serves data.
+- [ ] Runtime tests (TDD red → green) in `tests/methods-map.test.ts`: GET+POST from same entry; verb-not-in-map returns 405 with Allow header; methods overrides default CRUD POST while default GET still serves data.
+- [ ] Type tests via `expectTypeOf` in `tests/methods-map.test-d.ts`: `// @ts-expect-error` for lowercase verb keys; `// @ts-expect-error` for non-`HandlerSpec` value; `// @ts-expect-error` for `handler` + `methods` together on the same def; `// @ts-expect-error` for top-level `method` + `methods` together.
 - [ ] One example (`examples/ecommerce/server.ts`) migrated to use `methods` map for `/api/cart`.
 - [ ] README "Multi-verb endpoints" section.
 

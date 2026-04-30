@@ -28,7 +28,8 @@
     [2] /api/login: cannot set both 'data' and 'handler'
     [5] /api/users (GET): duplicate URL+method (also at index 7)
   ```
-- [ ] Tests: `tests/config-validator.test.ts` (one test per error class + one aggregation test) and `tests/config-validator-integration.test.ts` (mockr boot rejects bad config).
+- [ ] Runtime tests (TDD red → green) in `tests/config-validator.test.ts`: one test per error class (unknown key, each conflict pair, raw function handler, lowercase methods key, non-HandlerSpec methods value, malformed dataFile, duplicate URL+method) plus one aggregation test that produces multiple errors at once.
+- [ ] Integration tests (TDD red → green) in `tests/config-validator-integration.test.ts`: `mockr({...})` boot rejects bad config and the thrown message contains the formatted error block.
 - [ ] README mentions the validator behavior in a short troubleshooting note.
 
 ## Blocked by

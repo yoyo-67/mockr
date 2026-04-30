@@ -23,7 +23,8 @@ The function receives a `{ baseline(url) }` helper that returns a deep copy of t
   - `patch.dataFile` defined (rare) → reload from new path.
 - [ ] `server.reset()` reloads baselines into all handles + clears scenario state.
 - [ ] Old shape (`(s) => { s.endpoint(url).insert(...) }`) is removed; no backwards compatibility shim.
-- [ ] Tests: `tests/scenarios.test.ts` covering: replace data with empty array; extend via `baseline()`; swap handler returns 503; reset restores baselines.
+- [ ] Runtime tests (TDD red → green) in `tests/scenarios.test.ts`: replace data with empty array; extend via `baseline()` (and confirm subsequent calls don't see prior mutation — deep copy); swap handler returns 503; reset restores baselines; `methods` patch swaps individual verbs.
+- [ ] Type tests via `expectTypeOf` in `tests/scenarios.test-d.ts`: `ScenarioFn<E>` returns `Partial<Record<keyof E, EndpointDefPatch>>`; `baseline('/url')` is typed as `E[url]`; `// @ts-expect-error` for unknown URL in patch keys; `// @ts-expect-error` for `data` shape mismatch against the URL's declared type.
 - [ ] One example (`examples/auth-api/server.ts`) migrated to declarative scenarios.
 - [ ] README "Scenarios" section rewritten.
 

@@ -15,7 +15,7 @@ Today, `idKey` defaults to `'id'` and silently falls back to array index when it
 - [ ] Custom `idKey` (e.g. `idKey: 'uuid'`) does not trigger the warning when items have that field.
 - [ ] Empty data arrays do not trigger the warning (no items to check).
 - [ ] Record endpoints do not trigger the warning (no idKey concept).
-- [ ] Tests: `tests/id-key-warning.test.ts` covering: warning fires when items lack `id`; no warning when items have `id`; no warning when custom `idKey` matches; no warning on empty array; no warning on record.
+- [ ] Runtime tests (TDD red → green) in `tests/id-key-warning.test.ts`: warning fires when items lack `id`; no warning when items have `id`; no warning when custom `idKey` matches; no warning on empty array; no warning on record endpoint.
 - [ ] No other behavior change (warning only, fallback preserved).
 
 ## Blocked by

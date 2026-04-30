@@ -14,8 +14,8 @@ Top-level `mockr<E>({ endpoints: [...] })` keeps its explicit generic. Multiple 
 
 - [ ] `src/endpoints-helper.ts` exports `endpoints<T>(defs)` returning the same array unchanged.
 - [ ] `src/index.ts` re-exports `endpoints`.
-- [ ] Type test (`tests/endpoints-helper.test-d.ts`): `endpoints<E>([{ url: '/notInE', data: [] }])` is a type error; correct URLs pass; `ctx.endpoint(url)` inside a handler is typed against `T`.
-- [ ] Runtime test (`tests/endpoints-helper.test.ts`): identity, accepts empty array.
+- [ ] Runtime tests (TDD red → green) in `tests/endpoints-helper.test.ts`: identity (returns same array), accepts empty array.
+- [ ] Type tests via `expectTypeOf` in `tests/endpoints-helper.test-d.ts`: `// @ts-expect-error` on `endpoints<E>([{ url: '/notInE', data: [] }])`; correct URLs pass; `data` shape mismatch (`endpoints<{ '/x': Foo[] }>([{ url: '/x', data: [bar] }])`) is a type error; `ctx.endpoint(url)` inside a handler is typed against `T`; intersection composition (`type E = A & B`) accepts `[...aMocks, ...bMocks]`.
 - [ ] `playground/server.ts` (or one example) uses `endpoints<T>()` to declare a group; top-level `mockr<E>()` spreads it.
 - [ ] README has a "Splitting mocks across files" section showing the group + intersection composition pattern.
 

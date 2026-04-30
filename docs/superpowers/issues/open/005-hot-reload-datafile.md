@@ -18,7 +18,8 @@ When a `dataFile`'s underlying JSON changes on disk, the corresponding endpoint 
 - [ ] Server boot creates one watcher per `dataFile` endpoint. On change, calls `replaceData(arr)` (added to `ListHandle`) for arrays or `replace(obj)` for records.
 - [ ] `ListHandle` gets a `replaceData(items: T[]): void` method that swaps the internal array AND updates the baseline so a subsequent `.reset()` goes to the new content.
 - [ ] `server.close()` calls `watcher.closeAll()`.
-- [ ] Tests: `tests/data-file-watcher.test.ts` (debounce, reset content, bad JSON keep-last-good, closeAll stops events). `tests/data-file-hot-reload.test.ts` (integration: edit file → fetch endpoint reflects new data; in-memory POST mutations are dropped on reload).
+- [ ] Runtime tests (TDD red → green) in `tests/data-file-watcher.test.ts`: debounce collapses rapid writes; reset content reaches `onChange`; bad JSON keep-last-good (no callback fired, error logged); `closeAll` stops events.
+- [ ] Integration tests (TDD red → green) in `tests/data-file-hot-reload.test.ts`: edit file → fetch endpoint reflects new data within 250ms; in-memory POST mutations are dropped on reload (reset semantics).
 - [ ] README: short "Hot reload" section under `dataFile`.
 
 ## Blocked by

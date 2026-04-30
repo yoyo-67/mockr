@@ -17,7 +17,8 @@ Drops the old `body`/`response` forms from `EndpointDef`. New union: `data` | `d
 - [ ] `src/endpoint-handle.ts` becomes a thin dispatcher: `EndpointHandle<T> = T extends readonly any[] ? ListHandle<...> : T extends object ? RecordHandle<T> : never`. `createEndpointHandle(initial, opts?)` returns the right kind based on `Array.isArray(initial)`.
 - [ ] `src/types.ts` `EndpointDef` union collapses to: `data` | `dataFile` | `handler` (`methods` overlay added in slice 6). `body` and `response` forms removed. `body` reserved for request side only.
 - [ ] Server endpoint registration recognizes `data: object` (record) — today only `data: array` was supported. Record endpoints respond GET → object; PATCH/PUT mutate via handle.
-- [ ] Tests: `tests/list-handle.test.ts` (CRUD parity), `tests/record-handle.test.ts` (set/replace/reset + deep-copy reset), `tests/endpoint-handle-dispatch.test.ts` (factory picks right kind).
+- [ ] Runtime tests (TDD red → green): `tests/list-handle.test.ts` (CRUD parity), `tests/record-handle.test.ts` (set/replace/reset + deep-copy reset), `tests/endpoint-handle-dispatch.test.ts` (factory picks right kind).
+- [ ] Type tests via `expectTypeOf` in `tests/endpoint-handle.test-d.ts`: `EndpointHandle<Foo[]>` extends `ListHandle<Foo>`; `EndpointHandle<{ a: 1 }>` extends `RecordHandle<{ a: 1 }>`; `EndpointHandle<string>` is `never`. `// @ts-expect-error` on a list-handle method called on a record handle.
 - [ ] All existing tests still pass after the migration. Tests using old `body:` / `response:` shorthand are updated to use the new shape.
 - [ ] One example (`examples/todo/server.ts`) demonstrates `data: T[]`. One example (or playground) demonstrates `data: T` (record).
 - [ ] README "How it works" section reflects the new shape.

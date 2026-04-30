@@ -17,7 +17,7 @@ The Chrome extension calls `/__mockr/map` to write recorded entries into the use
 - [ ] Multiple methods on the same URL are emitted as a single entry with a `methods` map, not as separate array entries.
 - [ ] Existing `body:` / `response:` emission paths are removed.
 - [ ] Generated `Endpoints` type updates use array-form (`Foo[]`) for list endpoints, plain (`Foo`) for record endpoints — matches the spec rule that array shape drives kind.
-- [ ] Tests: extend `tests/server-file-patcher.test.ts` (or add a new file) asserting: emitted code contains `data:` not `body:`; handler emissions wrap in `handler({...})`; multi-method same-URL gets collapsed to `methods` map.
+- [ ] Runtime tests (TDD red → green) in `tests/server-file-patcher.test.ts` (extend existing or add new): emitted code contains `data:` not `body:`; handler emissions wrap in `handler({...})`; multi-method same-URL gets collapsed to a single entry with `methods` map; `dataFile` emission with known type uses `file<T>('./...')` and adds the import.
 - [ ] Manual end-to-end: load extension, record a session, click "Map to mockr", verify generated server file boots without modification.
 
 ## Blocked by
