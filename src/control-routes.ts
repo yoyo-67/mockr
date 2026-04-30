@@ -4,23 +4,42 @@ import { resolve, relative } from 'node:path';
 import type { Recorder } from './recorder.js';
 import type { MemorySessionStore } from './memory-session.js';
 import type { MatchFn } from './router.js';
-import type { MockrRequest, HandlerResult, HandlerContext, ParseableSchema, EndpointHandle } from './types.js';
-import { createEndpointHandle } from './endpoint-handle.js';
+import type { MockrRequest, HandlerResult, HandlerContext, ParseableSchema } from './types.js';
+import type { ListHandle } from './list-handle.js';
+import { createListHandle } from './list-handle.js';
 import { createMatcher } from './router.js';
 import { generateInterface, urlToFileName, urlToTypeName } from './type-generator.js';
 import { sendCorsJson, handleCorsOptions } from './http-utils.js';
 import { addEndpointToServerFile, removeEndpointFromServerFile, updateUrlInServerFile, changeToHandlerInServerFile } from './server-file-patcher.js';
 
+/** Raw HTTP response shape used by static/legacy code paths. */
+export interface StaticResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: unknown;
+}
+
 export interface InternalEndpoint {
   url: string | RegExp;
   method?: string;
   matcher: MatchFn;
-  handle: EndpointHandle<unknown>;
+  /** List handle when the endpoint is array-shaped data; null for handler/static. */
+  listHandle: ListHandle<Record<string, unknown>> | null;
+  /**
+   * Single-object body for static/record endpoints. Mutated by control-routes
+   * (PATCH/PUT/DELETE) and read at request time.
+   */
+  staticBody: unknown;
+  /** Pre-computed response for static endpoints. */
+  staticResponse: StaticResponse;
+  /** Active handler — may be swapped at runtime by scenarios. */
+  activeHandler: ((req: MockrRequest, ctx: HandlerContext<any>) => HandlerResult | Promise<HandlerResult>) | null;
   idKey: string;
   isData: boolean;
   isHandler: boolean;
   isStatic: boolean;
   disabled: boolean;
+  /** The handler the endpoint was originally configured with. Used by `reset()`. */
   handlerFn: ((req: MockrRequest, ctx: HandlerContext<any>) => HandlerResult | Promise<HandlerResult>) | null;
   schemas: { body?: ParseableSchema; query?: ParseableSchema; params?: ParseableSchema } | null;
   filePath?: string;
@@ -147,7 +166,7 @@ export async function handleControlRoute(
       method: ep.method?.toUpperCase() || 'ALL',
       type: ep.isData ? 'data' : ep.isHandler ? 'handler' : 'static',
       enabled: !ep.disabled,
-      itemCount: ep.isData ? (ep.handle.data as unknown[]).length : null,
+      itemCount: ep.isData && ep.listHandle ? ep.listHandle.data.length : null,
       filePath: ep.filePath || null,
     }));
     sendCorsJson(res, 200, list);
@@ -222,12 +241,12 @@ export async function handleControlRoute(
       if (reqBody.method && (ep.method || 'ALL').toUpperCase() !== reqBody.method.toUpperCase()) continue;
 
       if (reqBody.type === 'handler' && ep.isStatic) {
-        const currentBody = ep.handle.body;
-        const handlerFn: InternalEndpoint['handlerFn'] = async () => ({ status: 200, body: ep.handle.body ?? currentBody });
+        const currentBody = ep.staticBody;
+        const handlerFn: InternalEndpoint['handlerFn'] = async () => ({ status: 200, body: ep.staticBody ?? currentBody });
         ep.isStatic = false;
         ep.isHandler = true;
         ep.handlerFn = handlerFn;
-        ep.handle.handler = handlerFn;
+        ep.activeHandler = handlerFn;
         updated = true;
         if (serverFile) {
           try { await changeToHandlerInServerFile(serverFile, reqBody.url); }
@@ -237,17 +256,19 @@ export async function handleControlRoute(
         ep.isHandler = false;
         ep.isStatic = true;
         ep.handlerFn = null;
-        ep.handle.handler = null;
-        ep.handle.response = { status: 200, headers: {}, body: ep.handle.body };
+        ep.activeHandler = null;
+        ep.staticResponse = { status: 200, headers: {}, body: ep.staticBody };
         updated = true;
       } else if (reqBody.type === 'data') {
         ep.isHandler = false;
         ep.isStatic = false;
         ep.isData = true;
         ep.handlerFn = null;
-        ep.handle.handler = null;
-        const b = ep.handle.body;
-        if ((!Array.isArray(ep.handle.data) || ep.handle.data.length === 0) && Array.isArray(b)) ep.handle.data = b;
+        ep.activeHandler = null;
+        const b = ep.staticBody;
+        if (Array.isArray(b) && (!ep.listHandle || ep.listHandle.count() === 0)) {
+          ep.listHandle = createListHandle(b as Record<string, unknown>[], { idKey: ep.idKey });
+        }
         updated = true;
       }
       break;
@@ -448,15 +469,15 @@ async function handleMap(
       const epUrl = typeof ep.url === 'string' ? ep.url : null;
       if (epUrl === pathname && (!ep.method || ep.method.toUpperCase() === epMethod)) {
         if (isArray) {
-          ep.handle.data = bodyData;
+          ep.listHandle = createListHandle(bodyData as Record<string, unknown>[], { idKey: ep.idKey });
           ep.isData = true;
           ep.isStatic = false;
           ep.isHandler = false;
           ep.handlerFn = null;
-          ep.handle.handler = null;
+          ep.activeHandler = null;
         } else {
-          ep.handle.body = bodyData;
-          ep.handle.response = { status: entry.status === 304 ? 200 : entry.status, headers: {}, body: bodyData };
+          ep.staticBody = bodyData;
+          ep.staticResponse = { status: entry.status === 304 ? 200 : entry.status, headers: {}, body: bodyData };
           ep.isStatic = true;
           ep.isData = false;
           ep.isHandler = false;
@@ -468,12 +489,14 @@ async function handleMap(
 
     if (!found) {
       if (isArray) {
-        const handle = createEndpointHandle(bodyData, pathname);
         endpoints.push({
           url: pathname,
           method: epMethod === 'GET' ? undefined : epMethod,
           matcher: createMatcher(pathname),
-          handle,
+          listHandle: createListHandle(bodyData as Record<string, unknown>[], { idKey: 'id' }),
+          staticBody: undefined,
+          staticResponse: { status: 200, headers: {}, body: undefined },
+          activeHandler: null,
           idKey: 'id',
           isData: true,
           isHandler: false,
@@ -484,14 +507,15 @@ async function handleMap(
           filePath: bodyFilePath,
         });
       } else {
-        const handle = createEndpointHandle([], pathname);
-        handle.body = bodyData;
-        handle.response = { status: entry.status === 304 ? 200 : entry.status, headers: {}, body: bodyData };
+        const status = entry.status === 304 ? 200 : entry.status;
         endpoints.push({
           url: pathname,
           method: epMethod === 'GET' ? undefined : epMethod,
           matcher: createMatcher(pathname),
-          handle,
+          listHandle: null,
+          staticBody: bodyData,
+          staticResponse: { status, headers: {}, body: bodyData },
+          activeHandler: null,
           idKey: 'id',
           isData: false,
           isHandler: false,
