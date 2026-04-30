@@ -21842,6 +21842,12 @@ var MockrApi = class {
   async deleteMemSessionEntry(id, key) {
     await this.request(`/__mockr/mem-sessions/${id}/entries/${encodeURIComponent(key)}`, { method: "DELETE" });
   }
+  async setSessionCaptureFilter(filter) {
+    await this.request("/__mockr/mem-sessions/filter", {
+      method: "POST",
+      body: JSON.stringify({ filter })
+    });
+  }
 };
 
 // devtools/hooks/useStore.ts
@@ -22666,6 +22672,8 @@ function SessionsTab({ api, recordingFilter, onToggleCategory }) {
   };
   const handleActivate = async (id, mode) => {
     try {
+      await api.setSessionCaptureFilter(recordingFilter).catch(() => {
+      });
       await api.activateMemSession(id, mode);
       const reloading = autoReload ? " \u2014 reloading\u2026" : "";
       setStatus(`${mode === "record" ? "Recording" : "Replaying"} session${reloading}`);
@@ -23006,9 +23014,11 @@ function App() {
     setRecordingFilter((prev) => {
       const next = { ...prev, [cat]: !prev[cat] };
       chrome.storage.local.set({ mockrRecordingFilter: next });
+      api.setSessionCaptureFilter(next).catch(() => {
+      });
       return next;
     });
-  }, []);
+  }, [api]);
   const handleServerUrlChange = (0, import_react6.useCallback)((url) => {
     setServerUrl(url);
     chrome.storage.local.set({ mockrServerUrl: url });

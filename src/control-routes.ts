@@ -2,7 +2,7 @@ import type { ServerResponse } from 'node:http';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
 import type { Recorder } from './recorder.js';
-import type { MemorySessionStore } from './memory-session.js';
+import type { MemorySessionStore, FilterCategory } from './memory-session.js';
 import type { MatchFn } from './router.js';
 import type { MockrRequest, HandlerResult, HandlerContext, ParseableSchema } from './types.js';
 import type { HandlerSpec } from './handler.js';
@@ -365,6 +365,21 @@ async function handleMemSessionRoutes(
   if (path === '/__mockr/mem-sessions/deactivate' && method === 'POST') {
     store.setActive(null, 'off');
     sendCorsJson(res, 200, { active: null });
+    return true;
+  }
+
+  // POST /__mockr/mem-sessions/filter — set capture filter for active session
+  if (path === '/__mockr/mem-sessions/filter' && method === 'POST') {
+    const reqBody = body as { filter?: Record<string, boolean> | null } | undefined;
+    if (reqBody?.filter === null) {
+      store.setCaptureFilter(null);
+    } else if (reqBody?.filter && typeof reqBody.filter === 'object') {
+      store.setCaptureFilter(reqBody.filter as Record<FilterCategory, boolean>);
+    } else {
+      sendCorsJson(res, 400, { error: 'filter object or null required' });
+      return true;
+    }
+    sendCorsJson(res, 200, { filter: store.getCaptureFilter() });
     return true;
   }
 

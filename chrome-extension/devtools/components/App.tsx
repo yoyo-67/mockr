@@ -47,9 +47,10 @@ export function App() {
     setRecordingFilter(prev => {
       const next = { ...prev, [cat]: !prev[cat] };
       chrome.storage.local.set({ mockrRecordingFilter: next });
+      api.setSessionCaptureFilter(next).catch(() => { /* server unreachable — display-side filter still applies */ });
       return next;
     });
-  }, []);
+  }, [api]);
 
   const handleServerUrlChange = useCallback((url: string) => {
     setServerUrl(url);

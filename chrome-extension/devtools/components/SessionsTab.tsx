@@ -72,6 +72,7 @@ export function SessionsTab({ api, recordingFilter, onToggleCategory }: Props) {
 
   const handleActivate = async (id: string, mode: 'record' | 'replay') => {
     try {
+      await api.setSessionCaptureFilter(recordingFilter).catch(() => {});
       await api.activateMemSession(id, mode);
       const reloading = autoReload ? ' — reloading…' : '';
       setStatus(`${mode === 'record' ? 'Recording' : 'Replaying'} session${reloading}`);
