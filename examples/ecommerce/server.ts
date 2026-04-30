@@ -1,6 +1,6 @@
 // E-commerce catalog — multiple endpoints, cross-endpoint handlers, query filtering.
 
-import { mockr } from "../../src/index.js";
+import { mockr, file } from "../../src/index.js";
 
 interface Product {
   id: number;
@@ -17,17 +17,21 @@ interface CartItem {
 }
 
 type Endpoints = {
-  "/internal/products": Product;
-  "/internal/cart": CartItem;
+  "/internal/products": Product[];
+  "/internal/cart": CartItem[];
 };
 
 const server = await mockr<Endpoints>({
   port: 3002,
   endpoints: [
-    // Product catalog — loaded from JSON file, full CRUD available
+    // Product catalog — loaded from JSON file, full CRUD available.
+    // `file<Product[]>(...)` carries the array element type through to
+    // the handle, so `ctx.endpoint("/internal/products")` is `ListHandle<Product>`.
     {
       url: "/internal/products",
-      dataFile: new URL("./products.json", import.meta.url).pathname,
+      dataFile: file<Product[]>(
+        new URL("./products.json", import.meta.url).pathname,
+      ),
     },
 
     // Shopping cart — starts empty

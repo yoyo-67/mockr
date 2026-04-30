@@ -163,6 +163,37 @@ const server = await mockr({
 });
 ```
 
+#### Typed `dataFile`
+
+A plain `dataFile: './x.json'` works but produces an untyped handle (`unknown`).
+Wrap the path with `file<T>(...)` to carry the JSON shape into the handle's type
+without committing to a static `import` (so JSON edits keep hot-reloading):
+
+```ts
+import { mockr, file } from 'mockr';
+
+interface Todo { id: number; title: string; done: boolean }
+interface Config { theme: string; lang: string }
+
+type Endpoints = {
+  '/api/todos': Todo[];
+  '/api/config': Config;
+};
+
+const server = await mockr<Endpoints>({
+  endpoints: [
+    { url: '/api/todos',  dataFile: file<Todo[]>('./todos.json') },   // ListHandle<Todo>
+    { url: '/api/config', dataFile: file<Config>('./config.json') }, // RecordHandle<Config>
+  ],
+});
+
+server.endpoint('/api/todos').findById(1); // Todo | undefined
+server.endpoint('/api/config').data.theme; // string
+```
+
+`file<T>()` returns a branded `FileRef<T>` whose runtime value is just the path —
+hot-reload from disk still happens on every request.
+
 ### URL matching
 
 ```ts
