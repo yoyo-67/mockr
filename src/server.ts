@@ -250,7 +250,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
   }
 
   const handlerContext: HandlerContext = {
-    endpoints: ((url: string) => getEndpointHandle(url)) as HandlerContext['endpoints'],
+    endpoint: ((url: string) => getEndpointHandle(url)) as HandlerContext['endpoint'],
   };
 
   /**

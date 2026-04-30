@@ -27,7 +27,7 @@ export type HandlerResult =
   | { raw: true; body: string | Buffer; status: number; headers: Record<string, string | string[]> };
 
 export interface HandlerContext<TEndpoints = Record<string, unknown>> {
-  endpoints: [keyof TEndpoints] extends [never]
+  endpoint: [keyof TEndpoints] extends [never]
     ? (url: string) => EndpointHandle<unknown[]>
     : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : unknown>;
 }

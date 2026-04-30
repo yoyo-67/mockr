@@ -58,7 +58,7 @@ const server = await mockr<Endpoints>({
       url: '/api/rooms',
       method: 'GET',
       handler: (req, ctx) => {
-        const rooms = ctx.endpoints('/internal/rooms');
+        const rooms = ctx.endpoint('/internal/rooms');
         const priv = req.query.private as string | undefined;
         if (priv !== undefined) {
           const isPrivate = priv === 'true';
@@ -74,8 +74,8 @@ const server = await mockr<Endpoints>({
       method: 'GET',
       handler: (req, ctx) => {
         const roomId = Number(req.params.roomId);
-        const rooms = ctx.endpoints('/internal/rooms');
-        const messages = ctx.endpoints('/internal/messages');
+        const rooms = ctx.endpoint('/internal/rooms');
+        const messages = ctx.endpoint('/internal/messages');
 
         if (!rooms.has(roomId)) {
           return { status: 404, body: { error: `Room ${roomId} not found` } };
@@ -96,8 +96,8 @@ const server = await mockr<Endpoints>({
       handler: (req, ctx) => {
         const roomId = Number(req.params.roomId);
         const { author, text } = req.body as { author: string; text: string };
-        const rooms = ctx.endpoints('/internal/rooms');
-        const messages = ctx.endpoints('/internal/messages');
+        const rooms = ctx.endpoint('/internal/rooms');
+        const messages = ctx.endpoint('/internal/messages');
 
         if (!rooms.has(roomId)) {
           return { status: 404, body: { error: `Room ${roomId} not found` } };
@@ -123,8 +123,8 @@ const server = await mockr<Endpoints>({
         if (!q) {
           return { status: 400, body: { error: 'Missing ?q= parameter' } };
         }
-        const messages = ctx.endpoints('/internal/messages');
-        const rooms = ctx.endpoints('/internal/rooms');
+        const messages = ctx.endpoint('/internal/messages');
+        const rooms = ctx.endpoint('/internal/rooms');
 
         const results = messages
           .where((m) => m.text.toLowerCase().includes(q))
@@ -142,8 +142,8 @@ const server = await mockr<Endpoints>({
       url: '/api/stats',
       method: 'GET',
       handler: (_req, ctx) => {
-        const rooms = ctx.endpoints('/internal/rooms');
-        const messages = ctx.endpoints('/internal/messages');
+        const rooms = ctx.endpoint('/internal/rooms');
+        const messages = ctx.endpoint('/internal/messages');
 
         const perRoom = rooms.data.map((r) => ({
           room: r.name,

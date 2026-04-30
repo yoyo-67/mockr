@@ -61,7 +61,7 @@ const server = await mockr<Endpoints>({
       url: '/api/users',
       method: 'GET',
       handler: (req, ctx) => {
-        const users = ctx.endpoints('/internal/users');
+        const users = ctx.endpoint('/internal/users');
         const role = req.query.role as string | undefined;
         const items = role ? users.where((u) => u.role === role) : users.data;
         return { body: { users: items } };

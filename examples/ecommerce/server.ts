@@ -42,7 +42,7 @@ const server = await mockr<Endpoints>({
       url: "/api/products",
       method: "GET",
       handler: (req, ctx) => {
-        const products = ctx.endpoints("/internal/products");
+        const products = ctx.endpoint("/internal/products");
         let items = products.data;
 
         const category = req.query.category as string | undefined;
@@ -70,8 +70,8 @@ const server = await mockr<Endpoints>({
           product_id: number;
           quantity: number;
         };
-        const products = ctx.endpoints("/internal/products");
-        const cart = ctx.endpoints("/internal/cart");
+        const products = ctx.endpoint("/internal/products");
+        const cart = ctx.endpoint("/internal/cart");
 
         const product = products.findById(product_id);
         if (!product) {
@@ -109,8 +109,8 @@ const server = await mockr<Endpoints>({
       url: "/api/cart",
       method: "GET",
       handler: (_req, ctx) => {
-        const products = ctx.endpoints("/internal/products");
-        const cart = ctx.endpoints("/internal/cart");
+        const products = ctx.endpoint("/internal/products");
+        const cart = ctx.endpoint("/internal/cart");
 
         const items = cart.data.map((item) => {
           const product = products.findById(item.product_id);
