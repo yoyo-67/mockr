@@ -24,7 +24,7 @@ No `tsconfig.json` or build step needed — `tsx` runs TypeScript directly.
 import { mockr, handler } from '@yoyo-org/mockr';
 import { z } from 'zod';
 
-const server = await mockr({
+mockr({
   port: 4000,
   endpoints: [
     { url: '/api/orders', data: [{ id: 1, status: 'pending' }] },
@@ -42,12 +42,6 @@ const server = await mockr({
     },
   ],
 });
-
-// GET  /api/orders/1  → { id: 1, status: 'pending' }
-// POST /api/orders/ship { id: 1 }
-// GET  /api/orders/1  → { id: 1, status: 'shipped' }
-//
-// One data source, multiple routes — mutations are visible everywhere.
 ```
 
 ## How it works
@@ -307,3 +301,4 @@ See [`examples/`](./examples) for more usage patterns.
 ## License
 
 MIT
+
