@@ -8,12 +8,12 @@ export const DEFAULT_FILTER: Record<FilterCategory, boolean> = {
   json: true,
   xml: true,
   text: true,
-  html: true,
-  js: true,
-  css: true,
-  image: true,
-  font: true,
-  other: true,
+  html: false,
+  js: false,
+  css: false,
+  image: false,
+  font: false,
+  other: false,
 };
 
 export function categorize(mimeType: string, url: string): FilterCategory {

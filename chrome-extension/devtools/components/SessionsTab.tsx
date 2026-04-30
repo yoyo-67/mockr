@@ -52,6 +52,7 @@ export function SessionsTab({ api, recordingFilter, onToggleCategory }: Props) {
     try {
       const detail = await api.getMemSession(id);
       setEntries(detail.entries);
+      setSelectedKeys(new Set(detail.entries.map(e => e.key)));
     } catch (err) {
       setStatus(`Error: ${(err as Error).message}`);
     }
@@ -353,11 +354,16 @@ export function SessionsTab({ api, recordingFilter, onToggleCategory }: Props) {
                             </div>
                             <div className="flex flex-col gap-0.5">
                               {filteredEntries.map((e, i) => (
-                                <div key={i} className="group flex items-center gap-2 text-[10px] font-mono hover:bg-gray-100 rounded px-1">
+                                <div
+                                  key={i}
+                                  onClick={() => toggleEntrySelected(e.key)}
+                                  className="group flex items-center gap-2 text-[10px] font-mono hover:bg-gray-100 rounded px-1 cursor-pointer"
+                                >
                                   <input
                                     type="checkbox"
                                     checked={selectedKeys.has(e.key)}
                                     onChange={() => toggleEntrySelected(e.key)}
+                                    onClick={ev => ev.stopPropagation()}
                                     className="cursor-pointer"
                                   />
                                   <span className={`px-1 rounded ${
@@ -369,7 +375,7 @@ export function SessionsTab({ api, recordingFilter, onToggleCategory }: Props) {
                                   </span>
                                   <span className="text-gray-700 truncate flex-1">{e.key}</span>
                                   <button
-                                    onClick={() => handleDeleteEntry(s.id, e.key)}
+                                    onClick={ev => { ev.stopPropagation(); handleDeleteEntry(s.id, e.key); }}
                                     title="Remove this entry"
                                     className="opacity-0 group-hover:opacity-100 px-1 text-red-500 hover:text-red-700"
                                   >

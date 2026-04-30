@@ -21951,12 +21951,12 @@ var DEFAULT_FILTER = {
   json: true,
   xml: true,
   text: true,
-  html: true,
-  js: true,
-  css: true,
-  image: true,
-  font: true,
-  other: true
+  html: false,
+  js: false,
+  css: false,
+  image: false,
+  font: false,
+  other: false
 };
 function categorize(mimeType, url) {
   const ct = (mimeType || "").toLowerCase();
@@ -22648,6 +22648,7 @@ function SessionsTab({ api, recordingFilter, onToggleCategory }) {
     try {
       const detail = await api.getMemSession(id);
       setEntries(detail.entries);
+      setSelectedKeys(new Set(detail.entries.map((e) => e.key)));
     } catch (err) {
       setStatus(`Error: ${err.message}`);
     }
@@ -22919,28 +22920,40 @@ function SessionsTab({ api, recordingFilter, onToggleCategory }) {
               }
             )
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "flex flex-col gap-0.5", children: filteredEntries.map((e, i) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "group flex items-center gap-2 text-[10px] font-mono hover:bg-gray-100 rounded px-1", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-              "input",
-              {
-                type: "checkbox",
-                checked: selectedKeys.has(e.key),
-                onChange: () => toggleEntrySelected(e.key),
-                className: "cursor-pointer"
-              }
-            ),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: `px-1 rounded ${e.status >= 200 && e.status < 300 ? "bg-green-100 text-green-700" : e.status >= 400 ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600"}`, children: e.status }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "text-gray-700 truncate flex-1", children: e.key }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-              "button",
-              {
-                onClick: () => handleDeleteEntry(s.id, e.key),
-                title: "Remove this entry",
-                className: "opacity-0 group-hover:opacity-100 px-1 text-red-500 hover:text-red-700",
-                children: "\xD7"
-              }
-            )
-          ] }, i)) })
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "flex flex-col gap-0.5", children: filteredEntries.map((e, i) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+            "div",
+            {
+              onClick: () => toggleEntrySelected(e.key),
+              className: "group flex items-center gap-2 text-[10px] font-mono hover:bg-gray-100 rounded px-1 cursor-pointer",
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                  "input",
+                  {
+                    type: "checkbox",
+                    checked: selectedKeys.has(e.key),
+                    onChange: () => toggleEntrySelected(e.key),
+                    onClick: (ev) => ev.stopPropagation(),
+                    className: "cursor-pointer"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: `px-1 rounded ${e.status >= 200 && e.status < 300 ? "bg-green-100 text-green-700" : e.status >= 400 ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600"}`, children: e.status }),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "text-gray-700 truncate flex-1", children: e.key }),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                  "button",
+                  {
+                    onClick: (ev) => {
+                      ev.stopPropagation();
+                      handleDeleteEntry(s.id, e.key);
+                    },
+                    title: "Remove this entry",
+                    className: "opacity-0 group-hover:opacity-100 px-1 text-red-500 hover:text-red-700",
+                    children: "\xD7"
+                  }
+                )
+              ]
+            },
+            i
+          )) })
         ] }) }) })
       ] }, s.id);
     }) }) })
