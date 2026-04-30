@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mockr } from '../src/index.js';
+import { mockr, handler } from '../src/index.js';
 import { writeFile, mkdir } from 'node:fs/promises';
 
 describe('Level 4 — Cross-endpoint', () => {
@@ -18,15 +18,17 @@ describe('Level 4 — Cross-endpoint', () => {
         },
         {
           url: '/api/summary',
-          handler: (_req, { endpoint }) => {
-            const items = endpoint('/api/items');
-            return {
-              body: {
-                count: items.count(),
-                total: items.data.reduce((s: number, i: any) => s + i.price, 0),
-              },
-            };
-          },
+          handler: handler({
+            fn: (_req, { endpoint }) => {
+              const items = endpoint('/api/items');
+              return {
+                body: {
+                  count: items.count(),
+                  total: items.data.reduce((s: number, i: any) => s + i.price, 0),
+                },
+              };
+            },
+          }),
         },
       ],
     });
@@ -54,12 +56,14 @@ describe('Level 4 — Cross-endpoint', () => {
         {
           url: '/api/cart/add',
           method: 'POST',
-          handler: (req, { endpoint }) => {
-            const items = endpoint('/api/items');
-            const item = items.findById((req.body as any).itemId);
-            if (!item) return { status: 404, body: { error: 'Item not found' } };
-            return { body: { added: item } };
-          },
+          handler: handler({
+            fn: (req, { endpoint }) => {
+              const items = endpoint('/api/items');
+              const item = items.findById((req.body as any).itemId);
+              if (!item) return { status: 404, body: { error: 'Item not found' } };
+              return { body: { added: item } };
+            },
+          }),
         },
       ],
     });
@@ -95,15 +99,17 @@ describe('Level 4 — Cross-endpoint', () => {
         { url: '/api/items', dataFile: dataPath },
         {
           url: '/api/summary',
-          handler: (_req, { endpoint }) => {
-            const items = endpoint('/api/items');
-            return {
-              body: {
-                count: items.count(),
-                total: items.data.reduce((s: number, i: any) => s + i.price, 0),
-              },
-            };
-          },
+          handler: handler({
+            fn: (_req, { endpoint }) => {
+              const items = endpoint('/api/items');
+              return {
+                body: {
+                  count: items.count(),
+                  total: items.data.reduce((s: number, i: any) => s + i.price, 0),
+                },
+              };
+            },
+          }),
         },
       ],
     });

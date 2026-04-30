@@ -1,6 +1,6 @@
 // E-commerce catalog — multiple endpoints, cross-endpoint handlers, query filtering.
 
-import { mockr, file } from "../../src/index.js";
+import { mockr, file, handler } from "../../src/index.js";
 
 interface Product {
   id: number;
@@ -45,7 +45,7 @@ const server = await mockr<Endpoints>({
     {
       url: "/api/products",
       method: "GET",
-      handler: (req, ctx) => {
+      handler: handler({ fn: (req, ctx) => {
         const products = ctx.endpoint("/internal/products");
         let items = products.data;
 
@@ -60,7 +60,7 @@ const server = await mockr<Endpoints>({
         }
 
         return { body: { products: items, count: items.length } };
-      },
+      } }),
     },
 
     // POST /api/cart — add product to cart
@@ -69,7 +69,7 @@ const server = await mockr<Endpoints>({
     {
       url: "/api/cart",
       method: "POST",
-      handler: (req, ctx) => {
+      handler: handler({ fn: (req, ctx) => {
         const { product_id, quantity } = req.body as {
           product_id: number;
           quantity: number;
@@ -105,14 +105,14 @@ const server = await mockr<Endpoints>({
 
         const item = cart.insert({ product_id, quantity });
         return { status: 201, body: { item } };
-      },
+      } }),
     },
 
     // GET /api/cart — cart summary with product details and total
     {
       url: "/api/cart",
       method: "GET",
-      handler: (_req, ctx) => {
+      handler: handler({ fn: (_req, ctx) => {
         const products = ctx.endpoint("/internal/products");
         const cart = ctx.endpoint("/internal/cart");
 
@@ -128,7 +128,7 @@ const server = await mockr<Endpoints>({
 
         const total = items.reduce((sum, i) => sum + i.subtotal, 0);
         return { body: { items, total } };
-      },
+      } }),
     },
   ],
 });

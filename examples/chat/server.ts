@@ -1,7 +1,7 @@
 // Chat API — fixtures from files, error injection, cross-endpoint joins,
 // URL params, regex routes, custom middleware, scenarios.
 
-import { mockr, delay, logger, errorInjection } from '../../src/index.js';
+import { mockr, delay, logger, errorInjection, handler } from '../../src/index.js';
 
 interface Room {
   id: number;
@@ -57,7 +57,7 @@ const server = await mockr<Endpoints>({
     {
       url: '/api/rooms',
       method: 'GET',
-      handler: (req, ctx) => {
+      handler: handler({ fn: (req, ctx) => {
         const rooms = ctx.endpoint('/internal/rooms');
         const priv = req.query.private as string | undefined;
         if (priv !== undefined) {
@@ -65,14 +65,14 @@ const server = await mockr<Endpoints>({
           return { body: rooms.where((r) => r.is_private === isPrivate) };
         }
         return { body: rooms.data };
-      },
+      } }),
     },
 
     // GET /api/rooms/:roomId/messages — messages for a specific room
     {
       url: '/api/rooms/:roomId/messages',
       method: 'GET',
-      handler: (req, ctx) => {
+      handler: handler({ fn: (req, ctx) => {
         const roomId = Number(req.params.roomId);
         const rooms = ctx.endpoint('/internal/rooms');
         const messages = ctx.endpoint('/internal/messages');
@@ -86,14 +86,14 @@ const server = await mockr<Endpoints>({
           .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
         return { body: { room_id: roomId, messages: roomMessages } };
-      },
+      } }),
     },
 
     // POST /api/rooms/:roomId/messages — send a message
     {
       url: '/api/rooms/:roomId/messages',
       method: 'POST',
-      handler: (req, ctx) => {
+      handler: handler({ fn: (req, ctx) => {
         const roomId = Number(req.params.roomId);
         const { author, text } = req.body as { author: string; text: string };
         const rooms = ctx.endpoint('/internal/rooms');
@@ -111,14 +111,14 @@ const server = await mockr<Endpoints>({
         });
 
         return { status: 201, body: msg };
-      },
+      } }),
     },
 
     // GET /api/search?q=keyword — search messages across all rooms
     {
       url: '/api/search',
       method: 'GET',
-      handler: (req, ctx) => {
+      handler: handler({ fn: (req, ctx) => {
         const q = (req.query.q as string ?? '').toLowerCase();
         if (!q) {
           return { status: 400, body: { error: 'Missing ?q= parameter' } };
@@ -134,14 +134,14 @@ const server = await mockr<Endpoints>({
           }));
 
         return { body: { query: q, results, count: results.length } };
-      },
+      } }),
     },
 
     // GET /api/stats — aggregate stats across endpoints
     {
       url: '/api/stats',
       method: 'GET',
-      handler: (_req, ctx) => {
+      handler: handler({ fn: (_req, ctx) => {
         const rooms = ctx.endpoint('/internal/rooms');
         const messages = ctx.endpoint('/internal/messages');
 
@@ -157,7 +157,7 @@ const server = await mockr<Endpoints>({
             per_room: perRoom,
           },
         };
-      },
+      } }),
     },
   ],
 

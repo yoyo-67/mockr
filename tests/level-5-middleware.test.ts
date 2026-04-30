@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mockr, auth } from '../src/index.js';
+import { mockr, auth, handler } from '../src/index.js';
 
 describe('Level 5 — Middleware', () => {
   let server: Awaited<ReturnType<typeof mockr>>;
@@ -43,7 +43,7 @@ describe('Level 5 — Middleware', () => {
       endpoints: [
         {
           url: '/api/test',
-          handler: (req) => ({ body: { custom: (req as any).custom } }),
+          handler: handler({ fn: (req) => ({ body: { custom: (req as any).custom } }) }),
         },
       ],
       middleware: [

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mockr } from '../src/index.js';
+import { mockr, handler } from '../src/index.js';
 
 describe('Level 9 — Runtime APIs', () => {
   let server: Awaited<ReturnType<typeof mockr>> | undefined;
@@ -17,7 +17,7 @@ describe('Level 9 — Runtime APIs', () => {
         endpoints: [
           { url: '/api/items', data: [{ id: 1, name: 'Apple' }, { id: 2, name: 'Banana' }] },
           { url: '/api/config', data: { theme: 'dark' } },
-          { url: '/api/search', handler: () => ({ status: 200, body: [] }) },
+          { url: '/api/search', handler: handler({ fn: () => ({ status: 200, body: [] }) }) },
         ],
       });
 
@@ -51,7 +51,7 @@ describe('Level 9 — Runtime APIs', () => {
       server = await mockr({
         endpoints: [
           { url: '/api/items', method: 'GET', data: { items: [] } },
-          { url: '/api/items', method: 'POST', handler: () => ({ status: 201, body: {} }) },
+          { url: '/api/items', method: 'POST', handler: handler({ fn: () => ({ status: 201, body: {} }) }) },
         ],
       });
 
@@ -101,7 +101,7 @@ describe('Level 9 — Runtime APIs', () => {
       server = await mockr({
         endpoints: [
           { url: '/api/items', method: 'GET', data: { items: [] } },
-          { url: '/api/items', method: 'POST', handler: () => ({ status: 201, body: { created: true } }) },
+          { url: '/api/items', method: 'POST', handler: handler({ fn: () => ({ status: 201, body: { created: true } }) }) },
         ],
       });
 

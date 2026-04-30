@@ -60,26 +60,26 @@ const server = await mockr<Endpoints>({
     {
       url: '/api/users',
       method: 'GET',
-      handler: (req, ctx) => {
+      handler: handler({ fn: (req, ctx) => {
         const users = ctx.endpoint('/internal/users');
         const role = req.query.role as string | undefined;
         const items = role ? users.where((u) => u.role === role) : users.data;
         return { body: { users: items } };
-      },
+      } }),
     },
 
     // GET /api/me — returns the current user based on the token
     {
       url: '/api/me',
       method: 'GET',
-      handler: (req) => {
+      handler: handler({ fn: (req) => {
         const authHeader = (req.headers.authorization as string) ?? '';
         const token = authHeader.replace('Bearer ', '');
         if (token === 'admin-token-123') {
           return { body: { name: 'Admin', role: 'admin' } };
         }
         return { body: { name: 'Regular User', role: 'viewer' } };
-      },
+      } }),
     },
   ],
 

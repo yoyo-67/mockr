@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mockr } from '../src/index.js';
+import { mockr, handler } from '../src/index.js';
 
 describe('Level 2 — Dynamic handler', () => {
   let server: Awaited<ReturnType<typeof mockr>>;
@@ -10,12 +10,14 @@ describe('Level 2 — Dynamic handler', () => {
       endpoints: [
         {
           url: '/api/items/:id',
-          handler: (req) => {
-            if (req.params.id === '999') {
-              return { status: 404, body: { error: 'Not found' } };
-            }
-            return { body: { id: req.params.id, name: 'Item ' + req.params.id } };
-          },
+          handler: handler({
+            fn: (req) => {
+              if (req.params.id === '999') {
+                return { status: 404, body: { error: 'Not found' } };
+              }
+              return { body: { id: req.params.id, name: 'Item ' + req.params.id } };
+            },
+          }),
         },
       ],
     });
@@ -34,7 +36,7 @@ describe('Level 2 — Dynamic handler', () => {
       endpoints: [
         {
           url: '/api/search',
-          handler: (req) => ({ body: { query: req.query.q } }),
+          handler: handler({ fn: (req) => ({ body: { query: req.query.q } }) }),
         },
       ],
     });
@@ -48,7 +50,7 @@ describe('Level 2 — Dynamic handler', () => {
         {
           url: '/api/echo',
           method: 'POST',
-          handler: (req) => ({ body: { received: req.body } }),
+          handler: handler({ fn: (req) => ({ body: { received: req.body } }) }),
         },
       ],
     });
@@ -65,10 +67,12 @@ describe('Level 2 — Dynamic handler', () => {
       endpoints: [
         {
           url: '/api/async',
-          handler: async () => {
-            await new Promise((r) => setTimeout(r, 10));
-            return { body: { async: true } };
-          },
+          handler: handler({
+            fn: async () => {
+              await new Promise((r) => setTimeout(r, 10));
+              return { body: { async: true } };
+            },
+          }),
         },
       ],
     });

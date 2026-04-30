@@ -22,6 +22,7 @@ import { createRecorder, type Recorder } from './recorder.js';
 import { createMemorySessionStore, type MemorySessionStore } from './memory-session.js';
 import { parseQuery, getPath, readBody, sendJson, sendRaw } from './http-utils.js';
 import { handleControlRoute, type InternalEndpoint } from './control-routes.js';
+import { validateConfig, formatErrors } from './config-validator.js';
 
 /**
  * Warn at boot when a list endpoint's items lack the configured `idKey`.
@@ -82,6 +83,12 @@ Options:
 export async function mockr<TEndpoints = Record<string, unknown>>(
   config: MockrConfig<TEndpoints> = {},
 ): Promise<MockrServer<TEndpoints>> {
+  // Boot-time validation — throws aggregated error on bad config before any I/O.
+  const validation = validateConfig(config as MockrConfig<any>);
+  if (!validation.valid) {
+    throw new Error(formatErrors(validation.errors));
+  }
+
   // CLI args override config
   const cli = parseCli();
   if (cli.tui !== undefined) config = { ...config, tui: cli.tui };

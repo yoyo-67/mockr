@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mockr } from '../src/index.js';
+import { mockr, handler } from '../src/index.js';
 
 describe('ctx.endpoint (singular) — runtime', () => {
   let server: Awaited<ReturnType<typeof mockr>>;
@@ -16,10 +16,12 @@ describe('ctx.endpoint (singular) — runtime', () => {
         { url: '/internal/x', data: internalData },
         {
           url: '/api/x',
-          handler: (_req, ctx) => {
-            const internal = ctx.endpoint('/internal/x');
-            return { body: internal.data };
-          },
+          handler: handler({
+            fn: (_req, ctx) => {
+              const internal = ctx.endpoint('/internal/x');
+              return { body: internal.data };
+            },
+          }),
         },
       ],
     });
@@ -35,11 +37,13 @@ describe('ctx.endpoint (singular) — runtime', () => {
         {
           url: '/api/x',
           method: 'POST',
-          handler: (_req, ctx) => {
-            const internal = ctx.endpoint('/internal/x');
-            internal.insert({ id: 2, name: 'Beta' });
-            return { body: { ok: true } };
-          },
+          handler: handler({
+            fn: (_req, ctx) => {
+              const internal = ctx.endpoint('/internal/x');
+              internal.insert({ id: 2, name: 'Beta' });
+              return { body: { ok: true } };
+            },
+          }),
         },
       ],
     });

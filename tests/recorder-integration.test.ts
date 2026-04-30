@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mockr } from '../src/server.js';
+import { handler } from '../src/handler.js';
 import type { MockrServer } from '../src/types.js';
 import { mkdtemp, rm, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -159,7 +160,7 @@ describe('Recorder integration (server routes)', () => {
     mocksDir = await mkdtemp(join(tmpdir(), "mockr-mocks-"));
     const target = await mockr({
       port: 0,
-      endpoints: [{ url: "/api/target", handler: () => ({ body: "from-proxy" }) }],
+      endpoints: [{ url: "/api/target", handler: handler({ fn: () => ({ body: "from-proxy" }) }) }],
     });
     server = await mockr({
       port: 0,
@@ -1091,7 +1092,7 @@ const server = await mockr<Endpoints>({
     mocksDir = await mkdtemp(join(tmpdir(), "mockr-mocks-"));
     const target = await mockr({
       port: 0,
-      endpoints: [{ url: "/x", body: "proxy" }],
+      endpoints: [{ url: "/x", handler: handler({ fn: () => ({ body: "proxy" }) }) }],
     });
     server = await mockr({
       port: 0,

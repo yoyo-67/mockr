@@ -1,7 +1,7 @@
 // Proxy example: mock some routes, forward everything else to a real backend.
 // Usage: npx tsx examples/proxy/server.ts
 
-import { mockr } from '../../src/index.js';
+import { mockr, handler } from '../../src/index.js';
 
 const TARGET = process.env.PROXY_TARGET || 'https://jsonplaceholder.typicode.com';
 
@@ -18,7 +18,7 @@ const server = await mockr({
     },
     {
       url: '/api/users/me',
-      handler: () => ({
+      handler: handler({ fn: () => ({
         status: 200,
         body: {
           id: 42,
@@ -26,7 +26,7 @@ const server = await mockr({
           email: 'dev@localhost',
           role: 'admin',
         },
-      }),
+      }) }),
     },
   ],
   proxy: {

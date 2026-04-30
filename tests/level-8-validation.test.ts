@@ -115,7 +115,7 @@ describe('Zod validation', () => {
       endpoints: [
         {
           url: '/api/ping',
-          handler: () => ({ status: 200, body: { pong: true } }),
+          handler: handler({ fn: () => ({ status: 200, body: { pong: true } }) }),
         },
       ],
     });
