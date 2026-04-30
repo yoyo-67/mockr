@@ -99,7 +99,7 @@ describe('Memory-session replay (integration)', () => {
 
   it('replay mode serves cached responses after backend goes down', async () => {
     const backend = await spawn({
-      endpoints: [{ url: '/api/data', body: { value: 42 } }],
+      endpoints: [{ url: '/api/data', data: { value: 42 } }],
     });
 
     const server = await spawn({ proxy: { target: backend.url } });
@@ -189,7 +189,7 @@ describe('Memory-session replay (integration)', () => {
 
     // Second server defines /api/data as a static endpoint; session replay must not override it
     const server = await spawn({
-      endpoints: [{ url: '/api/data', body: { from: 'mock' } }],
+      endpoints: [{ url: '/api/data', data: { from: 'mock' } }],
       proxy: { target: backend.url },
     });
     const s2 = server.sessions.create('x');

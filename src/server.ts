@@ -253,6 +253,40 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     endpoints: ((url: string) => getEndpointHandle(url)) as HandlerContext['endpoints'],
   };
 
+  /**
+   * Build a scenario-flavored handle on top of an endpoint's underlying
+   * handle. Adds a writable `handler` slot that mutates `ep.activeHandler`,
+   * so old-style `s.endpoint(url).handler = fn` keeps working until issue 009
+   * lands declarative scenarios.
+   */
+  function buildScenarioHandle(ep: InternalEndpoint, base: EndpointHandle<unknown>) {
+    return new Proxy(base as object, {
+      get(target, prop, receiver) {
+        if (prop === 'handler') return ep.activeHandler;
+        return Reflect.get(target, prop, receiver);
+      },
+      set(target, prop, value, receiver) {
+        if (prop === 'handler') {
+          ep.activeHandler = value as InternalEndpoint['activeHandler'];
+          return true;
+        }
+        return Reflect.set(target, prop, value, receiver);
+      },
+      has(target, prop) {
+        if (prop === 'handler') return true;
+        return Reflect.has(target, prop);
+      },
+    }) as EndpointHandle<unknown>;
+  }
+
+  function findEndpointByUrl(url: string): InternalEndpoint | undefined {
+    for (const ep of endpoints) {
+      const epUrl = typeof ep.url === 'string' ? ep.url : ep.url.source;
+      if (epUrl === url) return ep;
+    }
+    return undefined;
+  }
+
   // Scenarios
   function applyScenario(name: string) {
     for (const ep of endpoints) {
@@ -263,7 +297,15 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     }
     const scenarioFn = scenarios[name];
     if (scenarioFn) {
-      const setup = { endpoint: (url: string) => getEndpointHandle(url) };
+      const setup = {
+        endpoint: (url: string) => {
+          const ep = findEndpointByUrl(url);
+          if (!ep) throw new Error(`Endpoint not found: ${url}`);
+          const base = getEndpointHandleFor(ep);
+          if (!base) throw new Error(`Endpoint '${url}' has no data handle.`);
+          return buildScenarioHandle(ep, base);
+        },
+      };
       (scenarioFn as (s: typeof setup) => void)(setup);
     }
     activeScenarioName = name;
@@ -401,7 +443,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     // Control routes (/__mockr/*)
     if (path.startsWith('/__mockr/')) {
       const handled = await handleControlRoute(path, method, body, res, {
-        recorder, endpoints, mocksDir, serverFile, scenarios: scenarios as Record<string, unknown>, memorySessions,
+        recorder, endpoints, mocksDir, serverFile, scenarios: scenarios as Record<string, unknown>, memorySessions, recordHandles,
       });
       if (handled) return;
     }

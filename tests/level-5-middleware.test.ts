@@ -8,8 +8,8 @@ describe('Level 5 — Middleware', () => {
   it('auth middleware blocks unauthenticated requests', async () => {
     server = await mockr({
       endpoints: [
-        { url: '/api/data', body: { secret: true } },
-        { url: '/health', body: { ok: true } },
+        { url: '/api/data', data: { secret: true } },
+        { url: '/health', data: { ok: true } },
       ],
       middleware: [
         auth({ type: 'bearer', validate: (t) => t === 'secret-token', exclude: ['/health'] }),
@@ -61,7 +61,7 @@ describe('Level 5 — Middleware', () => {
   it('post middleware can modify response', async () => {
     server = await mockr({
       endpoints: [
-        { url: '/api/data', body: { value: 1 } },
+        { url: '/api/data', data: { value: 1 } },
       ],
       middleware: [
         {
@@ -82,7 +82,7 @@ describe('Level 5 — Middleware', () => {
   it('middleware can short-circuit with pre', async () => {
     server = await mockr({
       endpoints: [
-        { url: '/api/data', body: { value: 1 } },
+        { url: '/api/data', data: { value: 1 } },
       ],
       middleware: [
         {

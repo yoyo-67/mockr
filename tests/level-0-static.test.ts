@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mockr } from '../src/index.js';
+import { mockr, handler } from '../src/index.js';
 
 describe('Level 0 — Static endpoints', () => {
   let server: Awaited<ReturnType<typeof mockr>>;
@@ -8,7 +8,7 @@ describe('Level 0 — Static endpoints', () => {
   it('serves a static body', async () => {
     server = await mockr({
       endpoints: [
-        { url: '/api/config', body: { theme: 'dark' } },
+        { url: '/api/config', data: { theme: 'dark' } },
       ],
     });
     const res = await fetch(`${server.url}/api/config`);
@@ -21,7 +21,9 @@ describe('Level 0 — Static endpoints', () => {
       endpoints: [
         {
           url: '/api/config',
-          response: { status: 201, headers: { 'X-Custom': 'yes' }, body: { ok: true } },
+          handler: handler({
+            fn: () => ({ status: 201, headers: { 'X-Custom': 'yes' }, body: { ok: true } }),
+          }),
         },
       ],
     });

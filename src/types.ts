@@ -74,10 +74,25 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       methods?: never;
     };
 
+/**
+ * Mutable handle adapter passed to scenario callbacks. Exposes the same shape
+ * as `EndpointHandle<T>` plus a writable `handler` slot — letting scenarios
+ * override an endpoint's handler without redeclaring the endpoint.
+ *
+ * @deprecated The `handler` slot is a transitional escape hatch kept for
+ * v0.3.0 scenario migration. Issue 009 replaces this with declarative
+ * scenario patches.
+ */
+export type ScenarioEndpointHandle<T> = EndpointHandle<T> & {
+  handler:
+    | ((req: MockrRequest, ctx: HandlerContext<any>) => HandlerResult | Promise<HandlerResult>)
+    | null;
+};
+
 export interface ScenarioSetup<TEndpoints = Record<string, unknown>> {
   endpoint: [keyof TEndpoints] extends [never]
-    ? (url: string) => EndpointHandle<unknown[]>
-    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : never>;
+    ? (url: string) => ScenarioEndpointHandle<unknown[]>
+    : <K extends keyof TEndpoints>(url: K) => ScenarioEndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : never>;
 }
 
 export interface MockrConfig<TEndpoints = Record<string, unknown>> {

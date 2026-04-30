@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { z } from 'zod';
-import { mockr, type MockrServer } from '../src/index.js';
+import { mockr, handler, type MockrServer } from '../src/index.js';
 
 let server: MockrServer;
 
@@ -15,13 +15,13 @@ describe('Zod validation', () => {
         {
           url: '/api/items',
           method: 'POST',
-          handler: {
+          handler: handler({
             body: z.object({
               name: z.string(),
               price: z.number(),
             }),
             fn: (req) => ({ status: 201, body: req.body }),
-          },
+          }),
         },
       ],
     });
@@ -43,13 +43,13 @@ describe('Zod validation', () => {
         {
           url: '/api/items',
           method: 'POST',
-          handler: {
+          handler: handler({
             body: z.object({
               name: z.string(),
               price: z.number(),
             }),
             fn: (req) => ({ status: 201, body: req.body }),
-          },
+          }),
         },
       ],
     });
@@ -70,13 +70,13 @@ describe('Zod validation', () => {
         {
           url: '/api/items',
           method: 'GET',
-          handler: {
+          handler: handler({
             query: z.object({
               page: z.string(),
               limit: z.string(),
             }),
             fn: (req) => ({ status: 200, body: { query: req.query } }),
-          },
+          }),
         },
       ],
     });
@@ -94,12 +94,12 @@ describe('Zod validation', () => {
         {
           url: '/api/items',
           method: 'GET',
-          handler: {
+          handler: handler({
             query: z.object({
               page: z.string(),
             }),
             fn: (req) => ({ status: 200, body: { page: req.query.page } }),
-          },
+          }),
         },
       ],
     });

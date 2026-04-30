@@ -23,7 +23,7 @@ describe('Recorder integration (server routes)', () => {
       port: 0,
       recorder: { sessionsDir, mocksDir },
       endpoints: [
-        { url: '/api/existing', body: { hello: 'world' } },
+        { url: '/api/existing', data: { hello: 'world' } },
       ],
     });
   }
@@ -159,7 +159,7 @@ describe('Recorder integration (server routes)', () => {
     mocksDir = await mkdtemp(join(tmpdir(), "mockr-mocks-"));
     const target = await mockr({
       port: 0,
-      endpoints: [{ url: "/api/target", body: "from-proxy" }],
+      endpoints: [{ url: "/api/target", handler: () => ({ body: "from-proxy" }) }],
     });
     server = await mockr({
       port: 0,
@@ -253,7 +253,7 @@ describe('Recorder integration (server routes)', () => {
     expect(((await r3.json()) as any).name).toBe("A");
   });
 
-  it("maps object body as static endpoint", async () => {
+  it("maps object body as record-data endpoint", async () => {
     await setup();
 
     await fetch(`${server.url}/__mockr/map`, {
@@ -275,7 +275,8 @@ describe('Recorder integration (server routes)', () => {
     const eps = (await (
       await fetch(`${server.url}/__mockr/endpoints`)
     ).json()) as any[];
-    expect(eps.find((e: any) => e.url === "/api/config").type).toBe("static");
+    // Object body becomes a record-data endpoint in v0.3.0.
+    expect(eps.find((e: any) => e.url === "/api/config").type).toBe("data");
 
     const res = await fetch(`${server.url}/api/config`);
     expect(await res.json()).toEqual({ theme: "dark" });
@@ -499,8 +500,8 @@ describe('Recorder integration (server routes)', () => {
     const eps = (await (
       await fetch(`${server.url}/__mockr/endpoints`)
     ).json()) as any[];
-    // Object body → static (array body would be data)
-    expect(eps.find((e: any) => e.url === "/api/inline").type).toBe("static");
+    // Object body → record-data endpoint in v0.3.0 (array body would also be data).
+    expect(eps.find((e: any) => e.url === "/api/inline").type).toBe("data");
 
     const res = await fetch(`${server.url}/api/inline`);
     expect(res.status).toBe(200);
@@ -560,7 +561,8 @@ describe('Recorder integration (server routes)', () => {
     const eps = (await res.json()) as any[];
     const existing = eps.find((e: any) => e.url === "/api/existing");
     expect(existing).toBeTruthy();
-    expect(existing.type).toBe("static");
+    // Object `data` is now a record-shaped data endpoint (not 'static').
+    expect(existing.type).toBe("data");
     expect(existing.enabled).toBe(true);
   });
 
@@ -643,11 +645,11 @@ describe('Recorder integration (server routes)', () => {
 
   it("changes static endpoint to handler (preserves data)", async () => {
     await setup();
-    // /api/existing is a config-defined static endpoint
+    // /api/existing is a config-defined record-data endpoint in v0.3.0.
     let eps = (await (
       await fetch(`${server.url}/__mockr/endpoints`)
     ).json()) as any[];
-    expect(eps.find((e: any) => e.url === "/api/existing").type).toBe("static");
+    expect(eps.find((e: any) => e.url === "/api/existing").type).toBe("data");
 
     const typeRes = await fetch(`${server.url}/__mockr/endpoints/type`, {
       method: "PATCH",
@@ -829,7 +831,7 @@ type Endpoints = {
 const server = await mockr<Endpoints>({
   port: 0,
   endpoints: [
-    { url: '/api/existing', body: { hello: 'world' } },
+    { url: '/api/existing', data: { hello: 'world' } },
   ],
 })
 `,
@@ -1002,8 +1004,9 @@ const server = await mockr({
       }),
     });
 
-    const handle = server.endpoint('/api/obj-resp');
-    expect(handle.body).toEqual({ projects: [{ id: 1 }] });
+    // In v0.3.0, object responses become record-data endpoints — read via `.data`.
+    const handle = server.endpoint('/api/obj-resp') as unknown as { data: unknown };
+    expect(handle.data).toEqual({ projects: [{ id: 1 }] });
   });
 
   it("delete removes endpoint from server file including type", async () => {
@@ -1022,7 +1025,7 @@ type Endpoints = {
 const server = await mockr<Endpoints>({
   port: 0,
   endpoints: [
-    { url: '/api/existing', body: { hello: 'world' } },
+    { url: '/api/existing', data: { hello: 'world' } },
   ],
 })
 `,

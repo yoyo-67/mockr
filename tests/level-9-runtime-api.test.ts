@@ -16,7 +16,7 @@ describe('Level 9 — Runtime APIs', () => {
       server = await mockr({
         endpoints: [
           { url: '/api/items', data: [{ id: 1, name: 'Apple' }, { id: 2, name: 'Banana' }] },
-          { url: '/api/config', body: { theme: 'dark' } },
+          { url: '/api/config', data: { theme: 'dark' } },
           { url: '/api/search', handler: () => ({ status: 200, body: [] }) },
         ],
       });
@@ -34,7 +34,7 @@ describe('Level 9 — Runtime APIs', () => {
       expect(eps[1]).toEqual({
         url: '/api/config',
         method: 'ALL',
-        type: 'static',
+        type: 'data',
         enabled: true,
         itemCount: null,
       });
@@ -50,7 +50,7 @@ describe('Level 9 — Runtime APIs', () => {
     it('listEndpoints shows method when specified', async () => {
       server = await mockr({
         endpoints: [
-          { url: '/api/items', method: 'GET', body: { items: [] } },
+          { url: '/api/items', method: 'GET', data: { items: [] } },
           { url: '/api/items', method: 'POST', handler: () => ({ status: 201, body: {} }) },
         ],
       });
@@ -100,7 +100,7 @@ describe('Level 9 — Runtime APIs', () => {
     it('disableEndpoint with method filter only disables matching method', async () => {
       server = await mockr({
         endpoints: [
-          { url: '/api/items', method: 'GET', body: { items: [] } },
+          { url: '/api/items', method: 'GET', data: { items: [] } },
           { url: '/api/items', method: 'POST', handler: () => ({ status: 201, body: { created: true } }) },
         ],
       });
@@ -119,8 +119,8 @@ describe('Level 9 — Runtime APIs', () => {
     it('enableAll and disableAll affect all endpoints', async () => {
       server = await mockr({
         endpoints: [
-          { url: '/api/a', body: { a: 1 } },
-          { url: '/api/b', body: { b: 2 } },
+          { url: '/api/a', data: { a: 1 } },
+          { url: '/api/b', data: { b: 2 } },
         ],
       });
 
@@ -141,12 +141,12 @@ describe('Level 9 — Runtime APIs', () => {
 
     it('disabled endpoint falls through to proxy', async () => {
       targetServer = await mockr({
-        endpoints: [{ url: '/api/items', body: { source: 'proxy' } }],
+        endpoints: [{ url: '/api/items', data: { source: 'proxy' } }],
       });
 
       server = await mockr({
         endpoints: [
-          { url: '/api/items', body: { source: 'local' } },
+          { url: '/api/items', data: { source: 'local' } },
         ],
         proxy: { target: targetServer.url },
       });
@@ -190,7 +190,7 @@ describe('Level 9 — Runtime APIs', () => {
 
     it('no proxy config means disabled and null target', async () => {
       server = await mockr({
-        endpoints: [{ url: '/api/a', body: {} }],
+        endpoints: [{ url: '/api/a', data: {} }],
       });
 
       expect(server.isProxyEnabled).toBe(false);
@@ -199,7 +199,7 @@ describe('Level 9 — Runtime APIs', () => {
 
     it('disableProxy stops forwarding to target', async () => {
       targetServer = await mockr({
-        endpoints: [{ url: '/api/remote', body: { remote: true } }],
+        endpoints: [{ url: '/api/remote', data: { remote: true } }],
       });
 
       server = await mockr({
@@ -219,7 +219,7 @@ describe('Level 9 — Runtime APIs', () => {
 
     it('enableProxy re-enables forwarding', async () => {
       targetServer = await mockr({
-        endpoints: [{ url: '/api/remote', body: { remote: true } }],
+        endpoints: [{ url: '/api/remote', data: { remote: true } }],
       });
 
       server = await mockr({
@@ -283,7 +283,7 @@ describe('Level 9 — Runtime APIs', () => {
 
     it('listScenarios is empty when no scenarios configured', async () => {
       server = await mockr({
-        endpoints: [{ url: '/api/items', body: {} }],
+        endpoints: [{ url: '/api/items', data: {} }],
       });
 
       expect(server.listScenarios()).toEqual([]);
