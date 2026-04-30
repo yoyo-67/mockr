@@ -1,4 +1,7 @@
 import type { HandlerSpec } from './handler.js';
+import type { EndpointHandle } from './endpoint-handle.js';
+
+export type { EndpointHandle } from './endpoint-handle.js';
 
 /** Minimal schema interface compatible with Zod's .safeParse() */
 export interface ParseableSchema<T = unknown> {
@@ -25,33 +28,8 @@ export type HandlerResult =
 
 export interface HandlerContext<TEndpoints = Record<string, unknown>> {
   endpoints: [keyof TEndpoints] extends [never]
-    ? (url: string) => EndpointHandle
-    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K]>;
-}
-
-/** Element type: unwraps T[] to T, keeps non-arrays as-is */
-type ElementOf<T> = T extends (infer U)[] ? U : T;
-
-export interface EndpointHandle<T = Record<string, unknown>> {
-  data: T;
-  findById(id: string | number): ElementOf<T> | undefined;
-  where(filter: Partial<ElementOf<T>>): ElementOf<T>[];
-  where(predicate: (item: ElementOf<T>) => boolean): ElementOf<T>[];
-  first(): ElementOf<T> | undefined;
-  count(): number;
-  has(id: string | number): boolean;
-  insert(item: ElementOf<T>): ElementOf<T>;
-  nextId(): number;
-  update(id: string | number, patch: Partial<ElementOf<T>>): ElementOf<T> | undefined;
-  updateMany(ids: (string | number)[], patch: Partial<ElementOf<T>> | ((item: ElementOf<T>) => Partial<ElementOf<T>>)): ElementOf<T>[];
-  patch(id: string | number, fields: Partial<ElementOf<T>>, defaults?: Partial<ElementOf<T>>): ElementOf<T> | undefined;
-  remove(id: string | number): boolean;
-  clear(): void;
-  reset(): void;
-  save(path: string): Promise<void>;
-  body: T;
-  response: { status: number; headers: Record<string, string>; body: unknown };
-  handler: ((req: MockrRequest, ctx: HandlerContext<any>) => HandlerResult | Promise<HandlerResult>) | null;
+    ? (url: string) => EndpointHandle<unknown[]>
+    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : never>;
 }
 
 export interface Middleware {
@@ -61,26 +39,45 @@ export interface Middleware {
 }
 
 export type EndpointDef<TEndpoints = Record<string, unknown>> =
-  | { url: string | RegExp; body: unknown; method?: string; response?: never; data?: never; dataFile?: never; handler?: never }
-  | { url: string | RegExp; response: { status: number; headers?: Record<string, string>; body: unknown }; method?: string; body?: never; data?: never; dataFile?: never; handler?: never }
-  | { url: string | RegExp; data: unknown[]; idKey?: string; method?: string; body?: never; response?: never; dataFile?: never; handler?: never }
-  | { url: string | RegExp; dataFile: string; idKey?: string; method?: string; body?: never; response?: never; data?: never; handler?: never }
   | {
       url: string | RegExp;
+      method?: string;
+      data: unknown;
+      idKey?: string;
+      dataFile?: never;
+      handler?: never;
+      body?: never;
+      response?: never;
+      methods?: never;
+    }
+  | {
+      url: string | RegExp;
+      method?: string;
+      dataFile: string;
+      idKey?: string;
+      data?: never;
+      handler?: never;
+      body?: never;
+      response?: never;
+      methods?: never;
+    }
+  | {
+      url: string | RegExp;
+      method?: string;
       handler:
         | ((req: MockrRequest, ctx: HandlerContext<TEndpoints>) => HandlerResult | Promise<HandlerResult>)
         | HandlerSpec<any, any, any, TEndpoints>;
-      method?: string;
-      body?: never;
-      response?: never;
       data?: never;
       dataFile?: never;
+      body?: never;
+      response?: never;
+      methods?: never;
     };
 
 export interface ScenarioSetup<TEndpoints = Record<string, unknown>> {
   endpoint: [keyof TEndpoints] extends [never]
-    ? (url: string) => EndpointHandle
-    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K]>;
+    ? (url: string) => EndpointHandle<unknown[]>
+    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : never>;
 }
 
 export interface MockrConfig<TEndpoints = Record<string, unknown>> {
@@ -106,8 +103,8 @@ export interface MockrServer<TEndpoints = Record<string, unknown>> {
   url: string;
   port: number;
   endpoint: [keyof TEndpoints] extends [never]
-    ? (url: string) => EndpointHandle
-    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K]>;
+    ? (url: string) => EndpointHandle<unknown[]>
+    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : never>;
   use(middleware: Middleware): void;
   scenario(name: string): Promise<void>;
   reset(): Promise<void>;

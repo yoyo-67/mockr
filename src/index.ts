@@ -18,6 +18,12 @@ export type {
 } from './types.js';
 export { handler, isHandlerSpec, HANDLER_SPEC_BRAND } from './handler.js';
 export type { HandlerSpec } from './handler.js';
+export { createListHandle } from './list-handle.js';
+export type { ListHandle, ListHandleOptions } from './list-handle.js';
+export { createRecordHandle } from './record-handle.js';
+export type { RecordHandle } from './record-handle.js';
+export { createEndpointHandle } from './endpoint-handle.js';
+export type { EndpointHandleOptions } from './endpoint-handle.js';
 export type {
   Recorder,
   RecorderOptions,
