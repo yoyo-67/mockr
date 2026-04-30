@@ -33,8 +33,8 @@ mockr({
       method: 'POST',
       handler: handler({
         body: z.object({ id: z.number() }),
-        fn: (req, { endpoints }) => {
-          const orders = endpoints('/api/orders');
+        fn: (req, { endpoint }) => {
+          const orders = endpoint('/api/orders');
           orders.update(req.body.id, { status: 'shipped' });
           return { body: { ok: true } };
         },
@@ -99,8 +99,8 @@ const server = await mockr<Endpoints>({
       method: 'GET',
       handler: handler({
         query: z.object({ status: z.string().optional() }),
-        fn: (req, { endpoints }) => {
-          const orders = endpoints('/internal/orders');
+        fn: (req, { endpoint }) => {
+          const orders = endpoint('/internal/orders');
           const { status } = req.query;
           const results = status ? orders.where({ status }) : orders.data;
           return { body: { orders: results, total: results.length } };
@@ -114,9 +114,9 @@ const server = await mockr<Endpoints>({
       method: 'POST',
       handler: handler({
         body: z.object({ order_ids: z.array(z.string()), status: z.string() }),
-        fn: (req, { endpoints }) => {
+        fn: (req, { endpoint }) => {
           const { order_ids, status } = req.body;
-          const orders = endpoints('/internal/orders');
+          const orders = endpoint('/internal/orders');
           const updated = orders.updateMany(order_ids, { status });
           return { body: { updated } };
         },
@@ -129,8 +129,8 @@ const server = await mockr<Endpoints>({
       method: 'GET',
       handler: handler({
         params: z.object({ userId: z.string() }),
-        fn: (req, { endpoints }) => {
-          const orders = endpoints('/internal/orders');
+        fn: (req, { endpoint }) => {
+          const orders = endpoint('/internal/orders');
           const userOrders = orders.where((o) => o.user_id === req.params.userId);
           return { body: { orders: userOrders } };
         },
@@ -150,18 +150,20 @@ orders.where({ status: 'shipped' }); // Order[]
 
 Keep your mock data in JSON files instead of inlining it. `dataFile` auto-detects the shape:
 
-- **Array JSON** → data endpoint with full CRUD
-- **Object JSON** → static endpoint (read-only)
+- **Array JSON** → list endpoint with full CRUD (`ListHandle`)
+- **Object JSON** → record endpoint, mutable via PATCH/PUT (`RecordHandle`)
 
 ```ts
 const server = await mockr({
   port: 4000,
   endpoints: [
-    { url: '/api/todos', dataFile: './todos.json' },    // [{id:1}...] → CRUD
-    { url: '/api/config', dataFile: './config.json' },   // {...} → static
+    { url: '/api/todos',  dataFile: './todos.json' },   // [{id:1}...] → list, CRUD
+    { url: '/api/config', dataFile: './config.json' },  // {...} → record, PATCH/PUT
   ],
 });
 ```
+
+Edit the JSON file on disk and the server picks up the change automatically — in-memory mutations are dropped (file content is the new truth).
 
 #### Typed `dataFile`
 
@@ -191,8 +193,99 @@ server.endpoint('/api/todos').findById(1); // Todo | undefined
 server.endpoint('/api/config').data.theme; // string
 ```
 
-`file<T>()` returns a branded `FileRef<T>` whose runtime value is just the path —
-hot-reload from disk still happens on every request.
+`file<T>()` returns a branded `FileRef<T>` whose runtime value is just the path.
+The server watches the file with `fs.watch` (debounced 100ms) and reloads on
+change — no static `import` required.
+
+### Validation with zod schemas
+
+`handler({ body, query, params, fn })` accepts optional zod schemas in any of the three slots. The schema's inferred output flows into `fn`'s `req` so `req.body`, `req.query`, and `req.params` are typed without manual casts. Invalid requests are rejected with `400` before `fn` runs.
+
+```ts
+import { mockr, handler } from 'mockr';
+import { z } from 'zod';
+
+await mockr({
+  port: 4000,
+  endpoints: [
+    {
+      url: '/api/orders',
+      method: 'POST',
+      handler: handler({
+        body:  z.object({ user_id: z.string(), total: z.number() }),
+        query: z.object({ trace: z.string().optional() }),
+        fn: (req) => {
+          req.body.user_id;   // string  (typed)
+          req.body.total;     // number  (typed)
+          req.query.trace;    // string | undefined
+          return { status: 201, body: { id: 'o1' } };
+        },
+      }),
+    },
+  ],
+});
+```
+
+### Multi-verb endpoints
+
+For a single verb, use the top-level `method` shorthand:
+
+```ts
+{ url: '/api/orders/ship', method: 'POST', handler: handler({ ... }) }
+```
+
+For multiple verbs on the same URL, drop `method` and use a nested `methods` object — one entry per verb. Cleaner than repeating the URL across array entries.
+
+```ts
+endpoints: [
+  {
+    url: '/api/cart',
+    methods: {
+      GET:  handler({ fn: (req, ctx) => ({ body: ctx.endpoint('/internal/cart').data }) }),
+      POST: handler({
+        body: z.object({ product_id: z.number(), quantity: z.number() }),
+        fn: (req, ctx) => {
+          ctx.endpoint('/internal/cart').insert(req.body as any);
+          return { body: { ok: true } };
+        },
+      }),
+    },
+  },
+]
+```
+
+`methods` may stand alone OR sit alongside `data`/`dataFile` (overrides specific verbs while default CRUD covers the rest). Verbs not in the map respond `405 Method Not Allowed` with an `Allow` header.
+
+### Scenarios
+
+Named server states you can switch between. Useful for demos, e2e tests, and reproducing edge cases.
+
+```ts
+await mockr({
+  endpoints: [
+    { url: '/api/users', data: [{ id: 1, name: 'Alice' }] },
+  ],
+  scenarios: {
+    empty:    (s) => { s.endpoint('/api/users').clear(); },
+    crowded:  (s) => {
+      const users = s.endpoint('/api/users');
+      users.insert({ name: 'Bob' });
+      users.insert({ name: 'Carol' });
+    },
+    down:     (s) => {
+      s.endpoint('/api/users').handler = () => ({
+        status: 503, body: { error: 'service down' },
+      });
+    },
+  },
+});
+
+// Programmatic switch
+await server.scenario('empty');
+
+// HTTP control
+// POST /__mockr/scenario  { "name": "down" }
+```
 
 ### URL matching
 
@@ -260,6 +353,56 @@ await mockr<Endpoints>({
   port: 4000,
   endpoints: [...cartMocks, ...orderMocks],
 });
+```
+
+#### Alternative: shared `types.ts`
+
+If you prefer a single source of truth, declare `Endpoints` once and have every mock group import it. Each group's handlers get full typing without per-group slices:
+
+```ts
+// src/types.ts
+export interface CartItem { id: number; product_id: number; quantity: number }
+export interface Order    { id: string;  user_id: string;    total: number    }
+
+export type Endpoints = {
+  '/internal/cart':   CartItem[];
+  '/internal/orders': Order[];
+};
+```
+
+```ts
+// src/mocks/cart.ts
+import { endpoints, handler } from 'mockr';
+import type { Endpoints } from '../types.js';
+
+export const cartMocks = endpoints<Endpoints>([ /* ... handlers see full Endpoints map ... */ ]);
+```
+
+```ts
+// src/mocks/orders.ts
+import { endpoints } from 'mockr';
+import type { Endpoints } from '../types.js';
+
+export const orderMocks = endpoints<Endpoints>([ /* ... */ ]);
+```
+
+```ts
+// src/server.ts
+import { mockr } from 'mockr';
+import type { Endpoints } from './types.js';
+import { cartMocks }   from './mocks/cart.js';
+import { orderMocks }  from './mocks/orders.js';
+
+await mockr<Endpoints>({ endpoints: [...cartMocks, ...orderMocks] });
+```
+
+Plain arrays also work — drop `endpoints<T>()` if you prefer no per-group type checking:
+
+```ts
+export const cartMocks = [
+  { url: '/internal/cart', dataFile: './cart.json' },
+  /* ... */
+];
 ```
 
 `endpoints<T>()` is a runtime no-op — it only enforces shape per group at the type level. Top-level `mockr<E>()` keeps its explicit generic; groups don't replace it, they compose into it.
@@ -389,6 +532,7 @@ config.replace({ ... }); // full overwrite
 | `remove(id)` | `boolean` | Delete by id |
 | `clear()` | `void` | Remove all items |
 | `reset()` | `void` | Restore original data |
+| `replaceData(items)` | `void` | Replace data + baseline (used by `dataFile` hot-reload) |
 | `save(path)` | `Promise<void>` | Save to file |
 
 #### `RecordHandle<T>` — record endpoints (`data: T`)
