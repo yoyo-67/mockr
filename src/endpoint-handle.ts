@@ -2,15 +2,31 @@ import { createListHandle, type ListHandle, type ListHandleOptions } from './lis
 import { createRecordHandle, type RecordHandle } from './record-handle.js';
 
 /**
+ * Superset of every shape `EndpointHandle` can produce. Used as the fallback
+ * when the caller does not pass an `Endpoints` generic and `T` collapses to
+ * `unknown`. The intersection makes both list and record method surfaces
+ * structurally accessible so untyped consumers can still call `.data`,
+ * `.findById`, `.count`, `.set`, etc. without narrowing.
+ */
+export type AnyEndpointHandle = ListHandle<unknown> & RecordHandle<Record<string, unknown>>;
+
+/**
  * Conditional handle type. Picks `ListHandle` when `T` is an array, and
  * `RecordHandle` when `T` is a non-array object. Anything else is `never`.
+ *
+ * The `unknown extends T` check (with `unknown` on the LEFT) only matches
+ * when `T` is exactly `unknown`, so untyped callers fall back to the union
+ * `AnyEndpointHandle`. Typed callers (`Foo[]`, `{ x: 1 }`) bypass the check
+ * and reach the precise narrowed branches below.
  */
-export type EndpointHandle<T> =
-  T extends readonly (infer U)[]
-    ? ListHandle<U>
-    : T extends object
-      ? RecordHandle<T>
-      : never;
+export type EndpointHandle<T = unknown> =
+  unknown extends T
+    ? AnyEndpointHandle
+    : T extends readonly (infer U)[]
+      ? ListHandle<U>
+      : T extends object
+        ? RecordHandle<T>
+        : never;
 
 /** Options accepted by `createEndpointHandle`. */
 export type EndpointHandleOptions = ListHandleOptions;

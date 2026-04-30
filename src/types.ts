@@ -29,7 +29,7 @@ export type HandlerResult =
 export interface HandlerContext<TEndpoints = Record<string, unknown>> {
   endpoints: [keyof TEndpoints] extends [never]
     ? (url: string) => EndpointHandle<unknown[]>
-    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : never>;
+    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : unknown>;
 }
 
 export interface Middleware {
@@ -92,7 +92,7 @@ export type ScenarioEndpointHandle<T> = EndpointHandle<T> & {
 export interface ScenarioSetup<TEndpoints = Record<string, unknown>> {
   endpoint: [keyof TEndpoints] extends [never]
     ? (url: string) => ScenarioEndpointHandle<unknown[]>
-    : <K extends keyof TEndpoints>(url: K) => ScenarioEndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : never>;
+    : <K extends keyof TEndpoints>(url: K) => ScenarioEndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : unknown>;
 }
 
 export interface MockrConfig<TEndpoints = Record<string, unknown>> {
@@ -119,7 +119,7 @@ export interface MockrServer<TEndpoints = Record<string, unknown>> {
   port: number;
   endpoint: [keyof TEndpoints] extends [never]
     ? (url: string) => EndpointHandle<unknown[]>
-    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : never>;
+    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : unknown>;
   use(middleware: Middleware): void;
   scenario(name: string): Promise<void>;
   reset(): Promise<void>;

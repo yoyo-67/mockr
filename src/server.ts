@@ -295,7 +295,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       if (rec) rec.reset();
       ep.activeHandler = ep.handlerFn;
     }
-    const scenarioFn = scenarios[name];
+    const scenarioFn = scenarios[name] as ((s: { endpoint: (url: string) => unknown }) => void) | undefined;
     if (scenarioFn) {
       const setup = {
         endpoint: (url: string) => {
@@ -306,7 +306,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
           return buildScenarioHandle(ep, base);
         },
       };
-      (scenarioFn as (s: typeof setup) => void)(setup);
+      scenarioFn(setup);
     }
     activeScenarioName = name;
   }

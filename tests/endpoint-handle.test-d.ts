@@ -1,5 +1,5 @@
 import { describe, it, expectTypeOf } from 'vitest';
-import type { EndpointHandle } from '../src/endpoint-handle.js';
+import type { AnyEndpointHandle, EndpointHandle } from '../src/endpoint-handle.js';
 import type { ListHandle } from '../src/list-handle.js';
 import type { RecordHandle } from '../src/record-handle.js';
 
@@ -64,5 +64,25 @@ describe('EndpointHandle conditional type', () => {
     listHandle.set({ name: 'X' });
     // @ts-expect-error replace is a record-handle method
     listHandle.replace({ id: 1, name: 'X' });
+  });
+
+  it('EndpointHandle defaults to AnyEndpointHandle when no generic is supplied', () => {
+    expectTypeOf<EndpointHandle>().toEqualTypeOf<AnyEndpointHandle>();
+  });
+
+  it('EndpointHandle<unknown> resolves to AnyEndpointHandle and exposes both shapes', () => {
+    type Handle = EndpointHandle<unknown>;
+    expectTypeOf<Handle>().toEqualTypeOf<AnyEndpointHandle>();
+    const handle = {} as Handle;
+    // .data is on both branches, so it must be reachable.
+    expectTypeOf(handle).toHaveProperty('data');
+    // .findById comes from the ListHandle branch and must be callable.
+    expectTypeOf(handle.findById(1)).toEqualTypeOf<unknown>();
+    // .count comes from the ListHandle branch.
+    expectTypeOf(handle.count()).toEqualTypeOf<number>();
+    // .set comes from the RecordHandle branch and must accept a partial patch.
+    handle.set({ anyKey: 'value' });
+    // .replace also comes from RecordHandle.
+    handle.replace({ anything: 1 });
   });
 });
