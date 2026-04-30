@@ -23,6 +23,24 @@ import { createMemorySessionStore, type MemorySessionStore } from './memory-sess
 import { parseQuery, getPath, readBody, sendJson, sendRaw } from './http-utils.js';
 import { handleControlRoute, type InternalEndpoint } from './control-routes.js';
 
+/**
+ * Warn at boot when a list endpoint's items lack the configured `idKey`.
+ * Default fallback (array index) is preserved; the warning surfaces the
+ * silent fallback so junior devs don't debug for hours.
+ */
+function warnIfMissingIdKey(url: string, data: unknown, idKey: string): void {
+  if (!Array.isArray(data) || data.length === 0) return;
+  const hasKey = data.some(
+    (item) => item != null && typeof item === 'object' && idKey in item,
+  );
+  if (!hasKey) {
+    console.warn(
+      `mockr: endpoint ${url} — idKey '${idKey}' not found on items, ` +
+        `defaulting to array index. Set idKey explicitly or add the field to your data.`,
+    );
+  }
+}
+
 function parseCli(): { tui?: boolean; port?: number; proxy?: string; recorder?: boolean } {
   try {
     const { values } = parseArgs({
@@ -173,6 +191,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
 
     if ('data' in def && def.data !== undefined) {
       const key = def.idKey || 'id';
+      warnIfMissingIdKey(urlStr, def.data, key);
       pushDataEndpoint(def.url, matcher, def.method, def.data, key);
     } else if ('dataFile' in def && def.dataFile !== undefined) {
       // Load initial data and re-read from disk on each request (live reload).
@@ -184,6 +203,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       const raw = await readFile(filePath, 'utf-8');
       const fileData = JSON.parse(raw);
       const key = def.idKey || 'id';
+      warnIfMissingIdKey(urlStr, fileData, key);
       const ep = pushDataEndpoint(def.url, matcher, def.method, fileData, key, filePath);
       ep.filePath = filePath;
       ep.isHandler = true;
