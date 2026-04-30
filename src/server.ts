@@ -23,6 +23,7 @@ import { createMemorySessionStore, type MemorySessionStore } from './memory-sess
 import { parseQuery, getPath, readBody, sendJson, sendRaw } from './http-utils.js';
 import { handleControlRoute, type InternalEndpoint } from './control-routes.js';
 import { validateConfig, formatErrors } from './config-validator.js';
+import { createDataFileWatcher } from './data-file-watcher.js';
 
 /**
  * Warn at boot when a list endpoint's items lack the configured `idKey`.
@@ -111,6 +112,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
   const endpoints: InternalEndpoint[] = [];
   const middlewares: Middleware[] = [...(config.middleware || [])];
   const scenarios = config.scenarios || {};
+  const dataFileWatcher = createDataFileWatcher();
   const memorySessions: MemorySessionStore = createMemorySessionStore();
   let proxyEnabled = !!config.proxy;
   let proxyTarget = config.proxy?.target ?? null;
@@ -202,10 +204,11 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       const ep = pushDataEndpoint(def.url, matcher, def.method, def.data, key);
       if (def.methods) ep.methods = def.methods as InternalEndpoint['methods'];
     } else if ('dataFile' in def && def.dataFile !== undefined) {
-      // Load initial data and re-read from disk on each request (live reload).
+      // Load initial data once, then keep it in memory. A file watcher
+      // refreshes the handle's data when the JSON file changes on disk
+      // (reset semantics: in-memory mutations are dropped on reload).
       // `dataFile` may be a plain string path or a typed `FileRef` produced
-      // by `file<T>('./x.json')`. The latter unlocks `EndpointHandle<T>` at
-      // the type level; at runtime we extract `.path` via `getFilePath`.
+      // by `file<T>('./x.json')`.
       const rawPath = isFileRef(def.dataFile) ? getFilePath(def.dataFile) : def.dataFile;
       const filePath = resolve(rawPath);
       const raw = await readFile(filePath, 'utf-8');
@@ -215,24 +218,24 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       const ep = pushDataEndpoint(def.url, matcher, def.method, fileData, key, filePath);
       ep.filePath = filePath;
       if (def.methods) ep.methods = def.methods as InternalEndpoint['methods'];
-      ep.isHandler = true;
-      const handlerFn: InternalEndpoint['handlerFn'] = async () => {
-        const freshRaw = await readFile(filePath, 'utf-8');
-        const freshData = JSON.parse(freshRaw);
-        if (Array.isArray(freshData)) {
-          if (!ep.listHandle) ep.listHandle = createListHandle(freshData as Record<string, unknown>[], { idKey: key });
-          else ep.listHandle.data = freshData as Record<string, unknown>[];
-        } else {
-          ep.staticBody = freshData;
-          ep.staticResponse = { status: 200, headers: {}, body: freshData };
+
+      // Hot-reload: update handle when the file changes.
+      dataFileWatcher.register(filePath, (newData: unknown) => {
+        if (Array.isArray(newData)) {
+          if (!ep.listHandle) ep.listHandle = createListHandle(newData as Record<string, unknown>[], { idKey: key });
+          else ep.listHandle.replaceData(newData as Record<string, unknown>[]);
+        } else if (typeof newData === 'object' && newData !== null) {
+          ep.staticBody = newData;
+          ep.staticResponse = { status: 200, headers: {}, body: newData };
           const rec = recordHandles.get(ep);
-          if (rec) rec.replace(freshData as object);
-          else recordHandles.set(ep, createRecordHandle(freshData as object));
+          if (rec) rec.replace(newData as object);
+          else recordHandles.set(ep, createRecordHandle(newData as object));
+        } else {
+          // Primitive — treat as static body.
+          ep.staticBody = newData;
+          ep.staticResponse = { status: 200, headers: {}, body: newData };
         }
-        return { status: 200, body: freshData };
-      };
-      ep.handlerFn = handlerFn;
-      ep.activeHandler = handlerFn;
+      });
     } else if ('handler' in def && def.handler !== undefined) {
       const h = def.handler;
       const isSpec = isHandlerSpec(h);
@@ -726,7 +729,10 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
           }
           await writeFile(resolve(savePath), JSON.stringify(snapshot, null, 2), 'utf-8');
         },
-        async close() { return new Promise<void>((res, rej) => { server.close((err) => (err ? rej(err) : res())); }); },
+        async close() {
+          dataFileWatcher.closeAll();
+          return new Promise<void>((res, rej) => { server.close((err) => (err ? rej(err) : res())); });
+        },
         async setPort(newPort: number) {
           await new Promise<void>((res, rej) => { server.close((err) => (err ? rej(err) : res())); });
           await new Promise<void>((res, rej) => {

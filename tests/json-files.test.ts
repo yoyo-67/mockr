@@ -109,6 +109,7 @@ describe('JSON files', () => {
         { url: '/api/live', dataFile: dataPath },
       ],
     });
+    await new Promise((r) => setTimeout(r, 120)); // let fs.watch settle
 
     // First request — original data
     const r1 = await fetch(`${server.url}/api/live`).then(r => r.json());
@@ -116,6 +117,7 @@ describe('JSON files', () => {
 
     // Edit the file on disk
     await writeFile(dataPath, JSON.stringify([{ id: 1, name: 'Updated' }, { id: 2, name: 'New' }]));
+    await new Promise((r) => setTimeout(r, 800)); // wait for watcher debounce + reload
 
     // Second request — picks up the change without restart
     const r2 = await fetch(`${server.url}/api/live`).then(r => r.json());
@@ -134,12 +136,14 @@ describe('JSON files', () => {
         { url: '/api/config-live', dataFile: dataPath },
       ],
     });
+    await new Promise((r) => setTimeout(r, 120));
 
     const r1 = await fetch(`${server.url}/api/config-live`).then(r => r.json());
     expect(r1).toEqual({ theme: 'dark' });
 
     // Edit
     await writeFile(dataPath, JSON.stringify({ theme: 'light', lang: 'en' }));
+    await new Promise((r) => setTimeout(r, 800));
 
     // Picks up change
     const r2 = await fetch(`${server.url}/api/config-live`).then(r => r.json());

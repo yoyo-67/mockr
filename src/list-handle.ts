@@ -49,6 +49,12 @@ export interface ListHandle<T> {
   reset(): void;
   /** Persist the current data as JSON to `path`. */
   save(path: string): Promise<void>;
+  /**
+   * Replace the entire data array AND the baseline used by `reset()`. Used by
+   * the dataFile hot-reload path so subsequent `reset()` calls go to the new
+   * file content rather than the original.
+   */
+  replaceData(items: readonly T[]): void;
 }
 
 /**
@@ -176,6 +182,14 @@ export function createListHandle<T>(
 
     async save(path: string) {
       await writeFile(path, JSON.stringify(data, null, 2), 'utf-8');
+    },
+
+    replaceData(items) {
+      data = structuredClone(items as T[]);
+      // Update baseline so a subsequent `reset()` goes to the new content,
+      // not the original (matches dataFile hot-reload semantics).
+      baseline.length = 0;
+      baseline.push(...structuredClone(items as T[]));
     },
   };
 }
