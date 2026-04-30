@@ -15,8 +15,9 @@ export type {
   ScenarioSetup,
   EndpointInfo,
   ParseableSchema,
-  ValidatedHandler,
 } from './types.js';
+export { handler, isHandlerSpec, HANDLER_SPEC_BRAND } from './handler.js';
+export type { HandlerSpec } from './handler.js';
 export type {
   Recorder,
   RecorderOptions,
@@ -34,17 +35,6 @@ export type {
 } from './memory-session.js';
 export type { MemorySessionInfo, MemorySessionEntry } from './types.js';
 
-import type { ParseableSchema, ValidatedHandler } from './types.js';
-
 export function typedData<T>(data: T[]): T[] {
   return data;
-}
-
-export function handler<
-  TBody extends ParseableSchema | undefined = undefined,
-  TQuery extends ParseableSchema | undefined = undefined,
-  TParams extends ParseableSchema | undefined = undefined,
-  TEndpoints = Record<string, unknown>,
->(h: ValidatedHandler<TBody, TQuery, TParams, TEndpoints>): ValidatedHandler<TBody, TQuery, TParams, TEndpoints> {
-  return h;
 }

@@ -1,3 +1,5 @@
+import type { HandlerSpec } from './handler.js';
+
 /** Minimal schema interface compatible with Zod's .safeParse() */
 export interface ParseableSchema<T = unknown> {
   safeParse(data: unknown):
@@ -52,25 +54,6 @@ export interface EndpointHandle<T = Record<string, unknown>> {
   handler: ((req: MockrRequest, ctx: HandlerContext<any>) => HandlerResult | Promise<HandlerResult>) | null;
 }
 
-export interface ValidatedHandler<
-  TBody extends ParseableSchema | undefined = undefined,
-  TQuery extends ParseableSchema | undefined = undefined,
-  TParams extends ParseableSchema | undefined = undefined,
-  TEndpoints = Record<string, unknown>,
-> {
-  body?: TBody;
-  query?: TQuery;
-  params?: TParams;
-  fn: (
-    req: MockrRequest<{
-      body: TBody extends ParseableSchema<infer B> ? B : unknown;
-      params: TParams extends ParseableSchema<infer P extends Record<string, string>> ? P : Record<string, string>;
-      query: TQuery extends ParseableSchema<infer Q extends Record<string, unknown>> ? Q : Record<string, string | string[]>;
-    }>,
-    ctx: HandlerContext<TEndpoints>,
-  ) => HandlerResult | Promise<HandlerResult>;
-}
-
 export interface Middleware {
   name?: string;
   pre?: (req: MockrRequest) => void | HandlerResult | Promise<void | HandlerResult>;
@@ -86,7 +69,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       url: string | RegExp;
       handler:
         | ((req: MockrRequest, ctx: HandlerContext<TEndpoints>) => HandlerResult | Promise<HandlerResult>)
-        | ValidatedHandler<any, any, any, TEndpoints>;
+        | HandlerSpec<any, any, any, TEndpoints>;
       method?: string;
       body?: never;
       response?: never;
