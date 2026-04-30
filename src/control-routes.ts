@@ -5,6 +5,7 @@ import type { Recorder } from './recorder.js';
 import type { MemorySessionStore } from './memory-session.js';
 import type { MatchFn } from './router.js';
 import type { MockrRequest, HandlerResult, HandlerContext, ParseableSchema } from './types.js';
+import type { HandlerSpec } from './handler.js';
 import type { ListHandle } from './list-handle.js';
 import { createListHandle } from './list-handle.js';
 import { createRecordHandle, type RecordHandle } from './record-handle.js';
@@ -44,6 +45,8 @@ export interface InternalEndpoint {
   handlerFn: ((req: MockrRequest, ctx: HandlerContext<any>) => HandlerResult | Promise<HandlerResult>) | null;
   schemas: { body?: ParseableSchema; query?: ParseableSchema; params?: ParseableSchema } | null;
   filePath?: string;
+  /** Per-verb handler overlay; takes precedence over default CRUD/handler dispatch. */
+  methods?: Partial<Record<string, HandlerSpec<any, any, any, any>>>;
 }
 
 interface ControlRoutesConfig {

@@ -39,41 +39,90 @@ export interface Middleware {
   post?: (req: MockrRequest, res: HandlerResult) => void | HandlerResult | Promise<void | HandlerResult>;
 }
 
+/**
+ * Map of uppercase HTTP verbs to handler specs. Used as an overlay on `data` /
+ * `dataFile` endpoints (overrides specific verbs while default CRUD covers the
+ * rest) or stand-alone (no data store, all verbs explicit).
+ */
+export type HttpVerb = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS' | 'HEAD';
+
+/**
+ * `MethodMap` values use `HandlerSpec<any, any, any, any>` (TEndpoints = any)
+ * so groups composed via intersection (`endpoints<A>` + `endpoints<B>` into
+ * `mockr<A & B>`) typecheck without a bivariance hack on each verb slot.
+ *
+ * Trade-off: `ctx.endpoint(url)` inside a method-map handler is typed against
+ * `Record<string, unknown>` by default. Users wanting precise typing can pass
+ * an explicit generic to `handler<E>({ fn: (req, ctx) => ... })`.
+ */
+export type MethodMap<_TEndpoints = unknown> = Partial<
+  Record<HttpVerb, HandlerSpec<any, any, any, any>>
+>;
+
 export type EndpointDef<TEndpoints = Record<string, unknown>> =
   | {
       url: string | RegExp;
       method?: string;
       data: unknown;
       idKey?: string;
+      methods?: MethodMap<TEndpoints>;
       dataFile?: never;
       handler?: never;
       body?: never;
       response?: never;
-      methods?: never;
     }
   | {
       url: string | RegExp;
       method?: string;
       dataFile: FileRef<unknown> | string;
       idKey?: string;
+      methods?: MethodMap<TEndpoints>;
       data?: never;
       handler?: never;
       body?: never;
       response?: never;
-      methods?: never;
     }
   | {
       url: string | RegExp;
       method?: string;
+      // `BivariantHandler` makes `TEndpoints` bivariant in the function-arg
+      // position so groups composed via intersection (`endpoints<A>` +
+      // `endpoints<B>` into `mockr<A & B>`) typecheck. Without this hack,
+      // strict variance rejects the assignment because `HandlerContext<T>`
+      // varies contravariantly in `T`.
       handler:
-        | ((req: MockrRequest, ctx: HandlerContext<TEndpoints>) => HandlerResult | Promise<HandlerResult>)
+        | BivariantHandler<TEndpoints>
         | HandlerSpec<any, any, any, TEndpoints>;
       data?: never;
       dataFile?: never;
       body?: never;
       response?: never;
       methods?: never;
+    }
+  | {
+      url: string | RegExp;
+      methods: MethodMap<TEndpoints>;
+      method?: never;
+      data?: never;
+      dataFile?: never;
+      handler?: never;
+      body?: never;
+      response?: never;
+      idKey?: never;
     };
+
+/**
+ * Bivariance hack: by stuffing the function signature into a method slot,
+ * TS uses bivariant param checking even under `strictFunctionTypes`. This
+ * lets handlers declared against a group's `T` slot into a wider `T'` at the
+ * `mockr<T'>` call site.
+ */
+export type BivariantHandler<TEndpoints> = {
+  bivarianceHack(
+    req: MockrRequest,
+    ctx: HandlerContext<TEndpoints>,
+  ): HandlerResult | Promise<HandlerResult>;
+}['bivarianceHack'];
 
 /**
  * Mutable handle adapter passed to scenario callbacks. Exposes the same shape

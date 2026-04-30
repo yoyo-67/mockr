@@ -192,7 +192,8 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     if ('data' in def && def.data !== undefined) {
       const key = def.idKey || 'id';
       warnIfMissingIdKey(urlStr, def.data, key);
-      pushDataEndpoint(def.url, matcher, def.method, def.data, key);
+      const ep = pushDataEndpoint(def.url, matcher, def.method, def.data, key);
+      if (def.methods) ep.methods = def.methods as InternalEndpoint['methods'];
     } else if ('dataFile' in def && def.dataFile !== undefined) {
       // Load initial data and re-read from disk on each request (live reload).
       // `dataFile` may be a plain string path or a typed `FileRef` produced
@@ -206,6 +207,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       warnIfMissingIdKey(urlStr, fileData, key);
       const ep = pushDataEndpoint(def.url, matcher, def.method, fileData, key, filePath);
       ep.filePath = filePath;
+      if (def.methods) ep.methods = def.methods as InternalEndpoint['methods'];
       ep.isHandler = true;
       const handlerFn: InternalEndpoint['handlerFn'] = async () => {
         const freshRaw = await readFile(filePath, 'utf-8');
@@ -246,6 +248,25 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
         handlerFn,
         schemas,
         disabled: false,
+      });
+    } else if ('methods' in def && def.methods !== undefined) {
+      // Standalone `methods` form — no data store, all verbs explicit. Per-verb
+      // dispatch happens in the request handler via `ep.methods`.
+      endpoints.push({
+        url: def.url,
+        matcher,
+        listHandle: null,
+        staticBody: undefined,
+        staticResponse: { status: 200, headers: {}, body: undefined },
+        activeHandler: null,
+        idKey: 'id',
+        isData: false,
+        isHandler: true,
+        isStatic: false,
+        handlerFn: null,
+        schemas: null,
+        disabled: false,
+        methods: def.methods as InternalEndpoint['methods'],
       });
     }
     // No `body` / `response` shorthand — use `data: T` (record) for static
@@ -487,6 +508,40 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     // 1. Try endpoints (first match wins)
     for (const ep of endpoints) {
       if (ep.disabled) continue;
+
+      // Methods-map dispatch — overlays default behavior. When the request's
+      // verb is in `ep.methods`, run that handler. When the verb is missing
+      // AND the endpoint has no data fallback, respond 405 with `Allow`.
+      if (ep.methods) {
+        const routeMatch = ep.matcher(path);
+        const epUrlStr = typeof ep.url === 'string' ? ep.url : null;
+        const urlMatches =
+          routeMatch !== null ||
+          (epUrlStr !== null && (path === epUrlStr || path.startsWith(epUrlStr + '/')));
+        if (urlMatches) {
+          const spec = ep.methods[method];
+          if (spec) {
+            fakeReq.params = (routeMatch?.params ?? {}) as Record<string, string>;
+            const validationError = validateSchemas(
+              { body: spec.body, query: spec.query, params: spec.params },
+              fakeReq,
+            );
+            if (validationError) { handlerResult = validationError; source = 'mock'; break; }
+            handlerResult = await spec.fn(fakeReq, handlerContext);
+            source = 'mock';
+            break;
+          }
+          // Verb not in methods map. If endpoint has no data fallback, 405.
+          if (!ep.isData) {
+            const allowed = Object.keys(ep.methods).join(', ');
+            res.statusCode = 405;
+            res.setHeader('Allow', allowed);
+            res.end();
+            return;
+          }
+          // Else: fall through to default CRUD dispatch below.
+        }
+      }
 
       if (ep.isData) {
         if (ep.activeHandler) {
