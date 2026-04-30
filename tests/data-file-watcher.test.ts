@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, rmSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDataFileWatcher } from '../src/data-file-watcher.js';
@@ -53,6 +53,43 @@ describe('data-file-watcher', () => {
     expect(received).toBeNull();
     expect(errSpy).toHaveBeenCalled();
     errSpy.mockRestore();
+  });
+
+  it('fires onChange on multiple consecutive writes (re-arms after each event)', async () => {
+    const seen: unknown[] = [];
+    watcher.register(path, (data) => { seen.push(data); });
+    await wait(120);
+
+    writeFileSync(path, JSON.stringify([{ id: 2 }]));
+    await wait(800);
+
+    writeFileSync(path, JSON.stringify([{ id: 3 }]));
+    await wait(800);
+
+    writeFileSync(path, JSON.stringify([{ id: 4 }]));
+    await wait(800);
+
+    // Each write should produce a fresh onChange. Order preserved.
+    expect(seen).toEqual([[{ id: 2 }], [{ id: 3 }], [{ id: 4 }]]);
+  });
+
+  it('fires onChange on atomic replace (editor save = tmpfile + rename)', async () => {
+    const seen: unknown[] = [];
+    watcher.register(path, (data) => { seen.push(data); });
+    await wait(120);
+
+    // Simulate editor save: write to tmpfile, rename over original.
+    const tmp1 = path + '.swp1';
+    writeFileSync(tmp1, JSON.stringify([{ id: 2 }]));
+    renameSync(tmp1, path);
+    await wait(800);
+
+    const tmp2 = path + '.swp2';
+    writeFileSync(tmp2, JSON.stringify([{ id: 3 }]));
+    renameSync(tmp2, path);
+    await wait(800);
+
+    expect(seen).toEqual([[{ id: 2 }], [{ id: 3 }]]);
   });
 
   it('closeAll stops watching', async () => {

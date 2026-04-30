@@ -1,4 +1,5 @@
 import { watch, readFileSync, type FSWatcher } from 'node:fs';
+import { dirname, basename } from 'node:path';
 
 const DEBOUNCE_MS = 100;
 
@@ -21,6 +22,12 @@ export function createDataFileWatcher(): DataFileWatcher {
 
   return {
     register(path, onChange) {
+      // Track the last raw content we delivered so identical re-fires (FSEvents
+      // can replay events from before the watch was attached on macOS) don't
+      // bubble back to the caller as duplicates.
+      let lastRaw: string | undefined;
+      try { lastRaw = readFileSync(path, 'utf8'); } catch { /* file missing — ok */ }
+
       const fire = () => {
         let raw: string;
         try {
@@ -29,6 +36,7 @@ export function createDataFileWatcher(): DataFileWatcher {
           console.error(`mockr: failed to read ${path}:`, (err as Error).message);
           return;
         }
+        if (raw === lastRaw) return;
         let parsed: unknown;
         try {
           parsed = JSON.parse(raw);
@@ -39,10 +47,18 @@ export function createDataFileWatcher(): DataFileWatcher {
           );
           return;
         }
+        lastRaw = raw;
         onChange(parsed);
       };
 
-      const w = watch(path, () => {
+      // Watch the parent directory and filter by basename so atomic replaces
+      // (editor saves: write tmpfile + rename over original) survive — the
+      // original inode goes away but the directory entry persists. Watching
+      // the file directly would lose the handle on the first such replace.
+      const dir = dirname(path);
+      const name = basename(path);
+      const w = watch(dir, (_event, changed) => {
+        if (changed !== name) return;
         const existing = timers.get(path);
         if (existing) clearTimeout(existing);
         const t = setTimeout(() => {
