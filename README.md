@@ -46,7 +46,23 @@ mockr({
 
 ## How it works
 
-Give any URL a `data` array and mockr gives you a live, mutable REST API — GET, POST, PUT, PATCH, DELETE out of the box. Fetch it, modify it, fetch it again — changes persist in memory across requests. Every endpoint is stateful by default.
+Every endpoint is defined by a single `data` field. Its shape decides behavior:
+
+- **`data: T[]`** (array) → **list endpoint** with full CRUD — GET/POST/PUT/PATCH/DELETE out of the box. Mutations persist in memory across requests.
+- **`data: T`** (object) → **record endpoint** — a single mutable object. GET returns it; PATCH merges into it; PUT replaces it.
+
+For custom status codes, headers, or hand-rolled logic, use `handler({...})` instead. The old `body` and `response` shorthand fields are removed in v0.3.0; `body` is now reserved for the request side (`req.body`, `handler({ body: zodSchema })`).
+
+```ts
+endpoints: [
+  { url: '/api/todos',  data: [{ id: 1, title: 'Buy milk', done: false }] }, // list
+  { url: '/api/config', data: { theme: 'dark', lang: 'en' } },                // record
+  {
+    url: '/api/health',
+    handler: handler({ fn: () => ({ status: 200, body: { ok: true } }) }),
+  },
+]
+```
 
 ```ts
 import { mockr, handler } from '@yoyo-org/mockr';
@@ -240,8 +256,8 @@ The `Endpoints` generic maps URLs to their response type:
 
 ```ts
 type Endpoints = {
-  '/api/items': Item[];           // array → data endpoint, handle.data is Item[]
-  '/api/config': AppConfig;       // object → static endpoint, handle.body is AppConfig
+  '/api/items': Item[];           // array → list endpoint, handle.data is Item[]
+  '/api/config': AppConfig;       // object → record endpoint, handle.data is AppConfig
 };
 
 const server = await mockr<Endpoints>({ ... });
@@ -252,30 +268,47 @@ items.findById(1);    // Item | undefined (ElementOf<Item[]>)
 items.insert({...});  // Item
 
 const config = server.endpoint('/api/config');
-config.body;          // AppConfig
+config.data;          // AppConfig
+config.set({ ... });  // shallow merge
+config.replace({ ... }); // full overwrite
 ```
 
 ## API reference
 
 ### `EndpointHandle<T>`
 
+`EndpointHandle<T>` is a conditional type:
+
+- `T extends T'[]` → `ListHandle<T'>`
+- `T extends object` → `RecordHandle<T>`
+
+#### `ListHandle<U>` — list endpoints (`data: T[]`)
+
 | Method | Return type | Description |
 |---|---|---|
-| `data` | `T` | The data (array for data endpoints, object for static) |
-| `body` | `T` | The response body |
-| `findById(id)` | `ElementOf<T> \| undefined` | Find item by id |
-| `where(filter)` | `ElementOf<T>[]` | Filter by object match or predicate |
-| `first()` | `ElementOf<T> \| undefined` | First item |
+| `data` | `U[]` | Live, mutable backing array |
+| `findById(id)` | `U \| undefined` | Find item by id |
+| `where(filter)` | `U[]` | Filter by object match or predicate |
+| `first()` | `U \| undefined` | First item |
 | `count()` | `number` | Number of items |
 | `has(id)` | `boolean` | Check if id exists |
-| `insert(item)` | `ElementOf<T>` | Add item (returns with generated id) |
-| `update(id, patch)` | `ElementOf<T> \| undefined` | Partial update |
-| `updateMany(ids, patch)` | `ElementOf<T>[]` | Update multiple items |
-| `patch(id, fields, defaults?)` | `ElementOf<T> \| undefined` | Apply non-undefined fields + defaults |
+| `insert(item)` | `U` | Add item (returns with generated id) |
+| `update(id, patch)` | `U \| undefined` | Partial update |
+| `updateMany(ids, patch)` | `U[]` | Update multiple items |
+| `patch(id, fields, defaults?)` | `U \| undefined` | Apply non-undefined fields + defaults |
 | `remove(id)` | `boolean` | Delete by id |
 | `clear()` | `void` | Remove all items |
 | `reset()` | `void` | Restore original data |
 | `save(path)` | `Promise<void>` | Save to file |
+
+#### `RecordHandle<T>` — record endpoints (`data: T`)
+
+| Method | Description |
+|---|---|
+| `data` | Current object (read-only getter) |
+| `set(patch)` | Shallow merge `patch` into the current object |
+| `replace(value)` | Overwrite the entire object |
+| `reset()` | Restore the initial object via deep copy |
 
 ### `MockrServer`
 
