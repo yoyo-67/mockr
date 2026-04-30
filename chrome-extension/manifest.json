@@ -4,32 +4,10 @@
   "version": "0.2.0",
   "description": "Record network traffic and map responses to mockr endpoints",
   "permissions": [
-    "devtools",
     "storage",
-    "unlimitedStorage",
-    "tabs"
-  ],
-  "host_permissions": [
-    "<all_urls>"
+    "unlimitedStorage"
   ],
   "devtools_page": "devtools/devtools.html",
-  "background": {
-    "service_worker": "background/service-worker.js",
-    "type": "module"
-  },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content/bridge.js"],
-      "run_at": "document_start"
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": ["content/intercept.js"],
-      "matches": ["<all_urls>"]
-    }
-  ],
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

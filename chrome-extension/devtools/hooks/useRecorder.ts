@@ -1,12 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { MemoryEntry } from './useStore.js';
-
-function isXhr(mimeType: string, url: string): boolean {
-  const ct = mimeType.toLowerCase();
-  const u = url.toLowerCase();
-  if (ct.includes('image') || u.endsWith('.svg')) return false;
-  return ct.includes('json') || ct.includes('xml') || ct.includes('text/plain') || u.includes('/api/');
-}
+import { categorize, type FilterCategory } from '../../shared/recording-filter.js';
 
 export function useRecorder(
   isRecording: boolean,
@@ -14,8 +8,11 @@ export function useRecorder(
   addEntry: (e: Omit<MemoryEntry, 'id'>) => void,
   clearEntries: () => void,
   preserveLogs: boolean,
+  enabledCategories: Record<FilterCategory, boolean>,
 ) {
   const listenerRef = useRef<((req: chrome.devtools.network.Request) => void) | null>(null);
+  const enabledRef = useRef(enabledCategories);
+  useEffect(() => { enabledRef.current = enabledCategories; }, [enabledCategories]);
 
   useEffect(() => {
     if (!isRecording) {
@@ -34,7 +31,8 @@ export function useRecorder(
       const status = request.response.status;
       const contentType = request.response.content.mimeType || 'application/octet-stream';
       const timing = request.time || 0;
-      if (!isXhr(contentType, url)) return;
+      const category = categorize(contentType, url);
+      if (!enabledRef.current[category]) return;
 
       const responseHeaders: Record<string, string> = {};
       for (const h of request.response.headers) responseHeaders[h.name.toLowerCase()] = h.value;

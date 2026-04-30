@@ -1087,6 +1087,71 @@ const server = await mockr<Endpoints>({
 
   // Unknown routes catch-all
 
+  it("rejects map with empty body entry, writes no files", async () => {
+    await setup();
+    const res = await fetch(`${server.url}/__mockr/map`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        entries: [
+          {
+            url: "http://example.com/api/empty",
+            method: "GET",
+            status: 200,
+            contentType: "application/json",
+            body: "",
+          },
+        ],
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/empty body/i);
+    expect(body.error).toContain("/api/empty");
+
+    // No file written, no endpoint registered
+    await expect(stat(join(mocksDir, "api-empty.json"))).rejects.toThrow();
+    const eps = server.listEndpoints();
+    expect(eps.find((e) => e.url === "/api/empty")).toBeUndefined();
+  });
+
+  it("rejects map with invalid JSON body, no partial state", async () => {
+    await setup();
+    const res = await fetch(`${server.url}/__mockr/map`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        entries: [
+          {
+            url: "http://example.com/api/good",
+            method: "GET",
+            status: 200,
+            contentType: "application/json",
+            body: '{"ok":1}',
+          },
+          {
+            url: "http://example.com/api/bad",
+            method: "GET",
+            status: 200,
+            contentType: "application/json",
+            body: "{not valid json",
+          },
+        ],
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/invalid json/i);
+    expect(body.error).toContain("/api/bad");
+
+    // Atomic: neither endpoint should be created (good entry not partially mapped)
+    await expect(stat(join(mocksDir, "api-good.json"))).rejects.toThrow();
+    await expect(stat(join(mocksDir, "api-bad.json"))).rejects.toThrow();
+    const eps = server.listEndpoints();
+    expect(eps.find((e) => e.url === "/api/good")).toBeUndefined();
+    expect(eps.find((e) => e.url === "/api/bad")).toBeUndefined();
+  });
+
   it("unknown /__mockr routes return 404 not proxy", async () => {
     sessionsDir = await mkdtemp(join(tmpdir(), "mockr-rec-"));
     mocksDir = await mkdtemp(join(tmpdir(), "mockr-mocks-"));

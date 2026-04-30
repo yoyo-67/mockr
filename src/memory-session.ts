@@ -42,6 +42,7 @@ export interface MemorySessionStore {
   recordResponse(req: CacheLookupInput, response: CachedResponse): void;
   lookupResponse(req: CacheLookupInput): CachedResponse | undefined;
   clear(id: string): void;
+  deleteEntry(id: string, key: string): boolean;
   info(session: MemorySession): SessionInfo;
 }
 
@@ -134,6 +135,12 @@ export function createMemorySessionStore(): MemorySessionStore {
     if (s) s.entries.clear();
   }
 
+  function deleteEntry(id: string, key: string): boolean {
+    const s = byId.get(id);
+    if (!s) return false;
+    return s.entries.delete(key);
+  }
+
   function info(session: MemorySession): SessionInfo {
     return { id: session.id, name: session.name, createdAt: session.createdAt, entryCount: session.entries.size };
   }
@@ -148,6 +155,7 @@ export function createMemorySessionStore(): MemorySessionStore {
     recordResponse,
     lookupResponse,
     clear,
+    deleteEntry,
     info,
   };
 }

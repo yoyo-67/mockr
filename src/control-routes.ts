@@ -412,6 +412,16 @@ async function handleMemSessionRoutes(
       sendCorsJson(res, 200, { cleared: true });
       return true;
     }
+
+    if (action === 'entries' && method === 'DELETE') {
+      const prefix = `${id}/entries/`;
+      const encodedKey = rest.startsWith(prefix) ? rest.slice(prefix.length) : '';
+      if (!encodedKey) { sendCorsJson(res, 400, { error: 'entry key required' }); return true; }
+      const key = decodeURIComponent(encodedKey);
+      const ok = store.deleteEntry(id, key);
+      sendCorsJson(res, ok ? 200 : 404, ok ? { deleted: key } : { error: 'Session or entry not found' });
+      return true;
+    }
   }
 
   return false;
@@ -451,6 +461,32 @@ async function handleMap(
     return;
   }
 
+  // Pre-validate every entry before any file write or endpoint mutation.
+  // Atomic: either all entries map cleanly or none do.
+  const emptyBodyUrls: string[] = [];
+  const badJsonUrls: { url: string; reason: string }[] = [];
+  for (const entry of entriesToMap) {
+    if (!entry.body || entry.body.length === 0) {
+      emptyBodyUrls.push(entry.url);
+      continue;
+    }
+    if (entry.contentType.includes('json')) {
+      try { JSON.parse(entry.body); }
+      catch (err) {
+        badJsonUrls.push({ url: entry.url, reason: (err as Error).message });
+      }
+    }
+  }
+  if (emptyBodyUrls.length > 0) {
+    sendCorsJson(res, 400, { error: `Empty body — refusing to map: ${emptyBodyUrls.join(', ')}` });
+    return;
+  }
+  if (badJsonUrls.length > 0) {
+    const detail = badJsonUrls.map(b => `${b.url} (${b.reason})`).join('; ');
+    sendCorsJson(res, 400, { error: `Invalid JSON body — refusing to map: ${detail}` });
+    return;
+  }
+
   const generateTypes = reqBody?.generateTypes !== false;
   const mapped: { url: string; method: string; bodyFile: string; typesFile?: string }[] = [];
 
@@ -466,10 +502,9 @@ async function handleMap(
     const bodyFileRelative = './' + relative(process.cwd(), bodyFilePath);
     const bodyContent = entry.body;
 
-    // Write file
+    // Write file. JSON validity already checked in pre-validation pass — pretty-print on write.
     if (isJson) {
-      try { await writeFile(bodyFilePath, JSON.stringify(JSON.parse(bodyContent), null, 2), 'utf-8'); }
-      catch { await writeFile(bodyFilePath, bodyContent, 'utf-8'); }
+      await writeFile(bodyFilePath, JSON.stringify(JSON.parse(bodyContent), null, 2), 'utf-8');
     } else {
       await writeFile(bodyFilePath, bodyContent, 'utf-8');
     }

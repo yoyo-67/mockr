@@ -29,3 +29,18 @@
 - **Scenarios are declarative** — function returns `{ [url]: EndpointDef patch }`. No imperative `.insert()` / `.clear()` calls inside scenarios; no direct `handle.handler = ...` assignment. Receives `{ baseline(url) }` helper to read original data when extending. Patch shape mirrors `EndpointDef` (`data`, `dataFile`, `handler`, `methods`).
 - **`idKey` defaults to `'id'`**, override per endpoint. **Startup warning** if endpoint has `data` array but `idKey` field missing on items — surfaces silent fallback to array index.
 - **Boot-time config validation throws** with aggregated error listing every bad def by index + URL. Catches: unknown keys (with did-you-mean), conflicting forms (`data` + `handler`), `dataFile` path missing, duplicate URL+method, malformed `methods` map. Junior sees one clear error instead of silent misregistration.
+
+## Extension (chrome-extension/)
+
+### Glossary
+
+- **Mem-session** — server-side in-memory cache of GET/HEAD responses, process-local. Two modes: `record` (capture matching responses into the active session), `replay` (return cached response if key matches). Non-cacheable methods (POST/PUT/PATCH/DELETE) never enter a session even when active. Cache key: `${method} ${path}${normalizedQuery}`.
+- **Endpoint group** — server-declared logical grouping of endpoints, declared via optional name arg on `endpoints<T>(name?, items)`. Server exposes group on `/__mockr/endpoints`; Mocked tab renders one section per group. Ungrouped endpoints render flat. There is no FE-only folder layer.
+
+### Decisions
+
+- **Sessions auto-reload inspected page on every state change.** Activate-record, activate-replay, deactivate, and switch all call `chrome.devtools.inspectedWindow.reload()`. Symmetric — junior expects "set mode → see effect" without manual F5. Server session state survives reload (process-local closure). No confirm dialog; if form-state loss becomes an issue, add an opt-out toggle later.
+- **Map flow surfaces every failure.** Errors return a toast, not `console.error`. Empty bodies refuse to map (server returns 400). JSON content-type validates before write; invalid JSON returns 400 with the parse error. No silent empty-file writes.
+- **Path-template detection deferred.** Mapping `/users/123` and `/users/456` produces two separate endpoints. No `:id` extraction in v0.3.0.
+- **Folders concept deleted.** FE-only `chrome.storage.local.mockrFolders2` removed. Grouping derives from server config via `endpoints<T>(name?, items)`. No drag-drop, no FE assignment state. To regroup an endpoint, edit the server config file (which Mocked tab can open in the editor).
+- **`endpoints<T>(name?, items)` accepts optional group name.** `endpoints<AuthEndpoints>('Auth', [...])` tags every item with `__group: 'Auth'`. Omitted name = ungrouped (current behavior). Runtime stays a near-no-op (returns the array, optionally with group tag attached). Type-level constraints unchanged.
