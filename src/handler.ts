@@ -24,14 +24,19 @@ export interface HandlerSpec<
   body?: TBody;
   query?: TQuery;
   params?: TParams;
-  fn: (
-    req: MockrRequest<{
-      body: TBody extends ParseableSchema<infer B> ? B : unknown;
-      params: TParams extends ParseableSchema<infer P extends Record<string, string>> ? P : Record<string, string>;
-      query: TQuery extends ParseableSchema<infer Q extends Record<string, unknown>> ? Q : Record<string, string | string[]>;
-    }>,
-    ctx: HandlerContext<TEndpoints>,
-  ) => HandlerResult | Promise<HandlerResult>;
+  // Bivariant param checking via method shorthand — lets a handler typed for a
+  // group's `T` flow into a wider `T'` at a `mockr<T'>` call site (groups
+  // composed by intersection).
+  fn: {
+    bivarianceHack(
+      req: MockrRequest<{
+        body: TBody extends ParseableSchema<infer B> ? B : unknown;
+        params: TParams extends ParseableSchema<infer P extends Record<string, string>> ? P : Record<string, string>;
+        query: TQuery extends ParseableSchema<infer Q extends Record<string, unknown>> ? Q : Record<string, string | string[]>;
+      }>,
+      ctx: HandlerContext<TEndpoints>,
+    ): HandlerResult | Promise<HandlerResult>;
+  }['bivarianceHack'];
 }
 
 /**
