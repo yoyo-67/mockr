@@ -10,7 +10,7 @@ const server = await mockr({
   endpoints: [
     {
       url: '/api/feature-flags',
-      body: {
+      data: {
         darkMode: true,
         newDashboard: false,
         betaSearch: true,

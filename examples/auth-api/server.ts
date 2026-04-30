@@ -1,6 +1,6 @@
 // Auth API — middleware (auth, delay, logging), scenarios, runtime middleware.
 
-import { mockr, auth, delay, logger } from '../../src/index.js';
+import { mockr, handler, auth, delay, logger } from '../../src/index.js';
 
 interface User {
   id: number;
@@ -10,7 +10,7 @@ interface User {
 }
 
 type Endpoints = {
-  '/internal/users': User;
+  '/internal/users': User[];
 };
 
 const server = await mockr<Endpoints>({
@@ -26,22 +26,24 @@ const server = await mockr<Endpoints>({
   ],
   endpoints: [
     // Health check — no auth required (excluded above)
-    { url: '/api/health', body: { status: 'ok', version: '1.0.0' } },
+    { url: '/api/health', data: { status: 'ok', version: '1.0.0' } },
 
     // Login — no auth required, returns a token based on credentials
     {
       url: '/api/login',
       method: 'POST',
-      handler: (req) => {
-        const { email, password } = req.body as { email: string; password: string };
-        if (email === 'admin@example.com' && password === 'admin') {
-          return { body: { token: 'admin-token-123', role: 'admin' } };
-        }
-        if (email === 'user@example.com' && password === 'pass') {
-          return { body: { token: 'user-token-456', role: 'viewer' } };
-        }
-        return { status: 401, body: { error: 'Invalid credentials' } };
-      },
+      handler: handler({
+        fn: (req) => {
+          const { email, password } = req.body as { email: string; password: string };
+          if (email === 'admin@example.com' && password === 'admin') {
+            return { body: { token: 'admin-token-123', role: 'admin' } };
+          }
+          if (email === 'user@example.com' && password === 'pass') {
+            return { body: { token: 'user-token-456', role: 'viewer' } };
+          }
+          return { status: 401, body: { error: 'Invalid credentials' } };
+        },
+      }),
     },
 
     // User directory — protected by auth middleware
