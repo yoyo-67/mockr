@@ -18,6 +18,8 @@ export type {
 } from './types.js';
 export { handler, isHandlerSpec, HANDLER_SPEC_BRAND } from './handler.js';
 export type { HandlerSpec } from './handler.js';
+export { file, isFileRef, getFilePath, FILE_REF_BRAND } from './file.js';
+export type { FileRef } from './file.js';
 export { createListHandle } from './list-handle.js';
 export type { ListHandle, ListHandleOptions } from './list-handle.js';
 export { createRecordHandle } from './record-handle.js';

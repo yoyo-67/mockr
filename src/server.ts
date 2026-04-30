@@ -16,6 +16,7 @@ import { createListHandle } from './list-handle.js';
 import { createRecordHandle, type RecordHandle } from './record-handle.js';
 import { createEndpointHandle } from './endpoint-handle.js';
 import { isHandlerSpec } from './handler.js';
+import { isFileRef, getFilePath } from './file.js';
 import { createMatcher } from './router.js';
 import { createRecorder, type Recorder } from './recorder.js';
 import { createMemorySessionStore, type MemorySessionStore } from './memory-session.js';
@@ -174,8 +175,12 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       const key = def.idKey || 'id';
       pushDataEndpoint(def.url, matcher, def.method, def.data, key);
     } else if ('dataFile' in def && def.dataFile !== undefined) {
-      // Load initial data and re-read from disk on each request (live reload)
-      const filePath = resolve(def.dataFile);
+      // Load initial data and re-read from disk on each request (live reload).
+      // `dataFile` may be a plain string path or a typed `FileRef` produced
+      // by `file<T>('./x.json')`. The latter unlocks `EndpointHandle<T>` at
+      // the type level; at runtime we extract `.path` via `getFilePath`.
+      const rawPath = isFileRef(def.dataFile) ? getFilePath(def.dataFile) : def.dataFile;
+      const filePath = resolve(rawPath);
       const raw = await readFile(filePath, 'utf-8');
       const fileData = JSON.parse(raw);
       const key = def.idKey || 'id';

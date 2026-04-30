@@ -1,4 +1,5 @@
 import type { HandlerSpec } from './handler.js';
+import type { FileRef } from './file.js';
 import type { EndpointHandle } from './endpoint-handle.js';
 
 export type { EndpointHandle } from './endpoint-handle.js';
@@ -53,7 +54,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
   | {
       url: string | RegExp;
       method?: string;
-      dataFile: string;
+      dataFile: FileRef<unknown> | string;
       idKey?: string;
       data?: never;
       handler?: never;
