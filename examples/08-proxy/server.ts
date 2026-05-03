@@ -7,7 +7,7 @@ import { mockr, handler } from '../../src/index.js';
 
 const TARGET = process.env.PROXY_TARGET || 'https://jsonplaceholder.typicode.com';
 
-const server = await mockr({
+mockr({
   port: 3008,
   endpoints: [
     {
@@ -36,7 +36,7 @@ const server = await mockr({
   },
 });
 
-console.log(`Proxy example running at ${server.url}`);
+console.log(`Proxy example running at http://localhost:3008`);
 console.log(`  Mocked:  GET /api/feature-flags`);
 console.log(`  Mocked:  GET /api/users/me`);
 console.log(`  Proxied: everything else -> ${TARGET}`);

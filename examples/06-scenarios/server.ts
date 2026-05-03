@@ -12,7 +12,7 @@ type Endpoints = {
   '/api/users': User[];
 };
 
-const server = await mockr<Endpoints>({
+mockr<Endpoints>({
   port: 3006,
   endpoints: [
     {
@@ -47,6 +47,6 @@ const server = await mockr<Endpoints>({
   },
 });
 
-console.log(`Scenarios example running at ${server.url}`);
+console.log(`Scenarios example running at http://localhost:3006`);
 console.log(`  GET    /api/users               (default state)`);
 console.log(`  POST   /__mockr/scenario        { "name": "empty" | "crowded" | "down" }`);

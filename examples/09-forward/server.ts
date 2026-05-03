@@ -29,7 +29,7 @@ type Endpoints = {
   '/todos/:id': Todo;
 };
 
-const server = await mockr<Endpoints>({
+mockr<Endpoints>({
   port: 3009,
   proxy: { target: TARGET },
   endpoints: [
@@ -73,9 +73,8 @@ const server = await mockr<Endpoints>({
   ],
 });
 
-console.log(`Forward example running at ${server.url}`);
+console.log(`Forward example running at http://localhost:3009`);
 console.log(`  Filtered: GET /posts             (drops short titles from upstream)`);
 console.log(`  Enriched: GET /todos/1           (adds _localTag to upstream record)`);
 console.log(`  Stubbed:  GET /users/1?stub=1    (synthetic; ?stub omitted = live)`);
 console.log(`  Upstream: ${TARGET}`);
-

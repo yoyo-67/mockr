@@ -14,7 +14,7 @@ type Endpoints = {
   '/internal/cart': CartItem[];
 };
 
-const server = await mockr<Endpoints>({
+mockr<Endpoints>({
   port: 3003,
   endpoints: [
     // Source data — kept off the public surface.
@@ -70,6 +70,6 @@ const server = await mockr<Endpoints>({
   ],
 });
 
-console.log(`Cross-endpoint example running at ${server.url}`);
+console.log(`Cross-endpoint example running at http://localhost:3003`);
 console.log(`  GET    /api/cart        (joins /internal/products + /internal/cart)`);
 console.log(`  POST   /api/cart        (mutates both endpoints atomically)`);

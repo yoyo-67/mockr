@@ -28,7 +28,7 @@ type Endpoints = {
   '/api/config': AppConfig;
 };
 
-const server = await mockr<Endpoints>({
+mockr<Endpoints>({
   port: 3002,
   endpoints: [
     // Array JSON → list endpoint.
@@ -45,7 +45,7 @@ const server = await mockr<Endpoints>({
   ],
 });
 
-console.log(`Data-files example running at ${server.url}`);
+console.log(`Data-files example running at http://localhost:3002`);
 console.log(`  GET    /api/products       (list, full CRUD)`);
 console.log(`  GET    /api/config         (record, set/replace via PATCH/PUT)`);
 console.log(`  Edit ./products.json or ./config.json — endpoint hot-reloads.`);

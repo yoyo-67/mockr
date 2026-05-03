@@ -33,7 +33,7 @@ type Endpoints = {
   '/api/config': AppConfig;
 };
 
-await mockr<Endpoints>({
+mockr<Endpoints>({
   port: 3002,
   endpoints: [
     { url: '/api/products', dataFile: file<Product[]>('./products.json') },

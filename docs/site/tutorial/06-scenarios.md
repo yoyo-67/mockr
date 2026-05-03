@@ -24,7 +24,7 @@ interface User { id: number; name: string; role: string }
 
 type Endpoints = { '/api/users': User[] };
 
-await mockr<Endpoints>({
+mockr<Endpoints>({
   port: 3006,
   endpoints: [
     {

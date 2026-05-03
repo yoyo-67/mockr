@@ -8,7 +8,7 @@ Ten short chapters. Each isolates one feature, simplest first. Code in every cha
 | [02](./02-data-files) | Data files | `dataFile` + `file<T>` + hot-reload |
 | [03](./03-cross-endpoint) | Cross-endpoint | `ctx.endpoint(url)` joins |
 | [04](./04-handlers-zod) | Handlers + zod | `handler({ body, query, params, fn })` |
-| [05](./05-middleware) | Middleware | `logger` / `delay` / `auth` + `server.use()` |
+| [05](./05-middleware) | Middleware | `logger` / `delay` / `auth` + custom `post` |
 | [06](./06-scenarios) | Scenarios | named server states |
 | [07](./07-multi-method) | Multi-method | `methods: { GET, POST, ... }` |
 | [08](./08-proxy) | Proxy | passthrough to upstream |

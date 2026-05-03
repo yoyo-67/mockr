@@ -15,7 +15,7 @@ type Endpoints = {
   '/api/todos': Todo[];
 };
 
-const server = await mockr<Endpoints>({
+mockr<Endpoints>({
   port: 3001,
   endpoints: [
     {
@@ -29,7 +29,7 @@ const server = await mockr<Endpoints>({
   ],
 });
 
-console.log(`Data-list example running at ${server.url}`);
+console.log(`Data-list example running at http://localhost:3001`);
 console.log(`  GET    /api/todos        list`);
 console.log(`  POST   /api/todos        insert`);
 console.log(`  PATCH  /api/todos/:id    partial update`);

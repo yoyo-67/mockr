@@ -27,7 +27,7 @@ type Endpoints = {
   '/internal/messages': Message[];
 };
 
-const server = await mockr<Endpoints>({
+mockr<Endpoints>({
   port: 3010,
   middleware: [
     logger(),
@@ -186,4 +186,4 @@ const server = await mockr<Endpoints>({
   },
 });
 
-console.log(`Chat API running at ${server.url}`);
+console.log(`Chat API running at http://localhost:3010`);

@@ -14,7 +14,7 @@ type Endpoints = {
   '/internal/cart': CartItem[];
 };
 
-const server = await mockr<Endpoints>({
+mockr<Endpoints>({
   port: 3007,
   endpoints: [
     { url: '/internal/cart', data: [] },
@@ -44,7 +44,7 @@ const server = await mockr<Endpoints>({
   ],
 });
 
-console.log(`Multi-method example running at ${server.url}`);
+console.log(`Multi-method example running at http://localhost:3007`);
 console.log(`  GET    /api/cart                 list items`);
 console.log(`  POST   /api/cart                 add item`);
 console.log(`  DELETE /api/cart                 clear cart`);

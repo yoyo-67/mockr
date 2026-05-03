@@ -21,7 +21,7 @@ Invalid requests get a `400` with the zod issue list before `fn` runs. Each slot
 import { mockr, handler } from '@yoyo-org/mockr';
 import { z } from 'zod';
 
-await mockr({
+mockr({
   port: 3004,
   endpoints: [
     {

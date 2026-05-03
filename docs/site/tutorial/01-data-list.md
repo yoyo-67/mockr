@@ -30,7 +30,7 @@ type Endpoints = {
   '/api/todos': Todo[];
 };
 
-await mockr<Endpoints>({
+mockr<Endpoints>({
   port: 3001,
   endpoints: [
     {

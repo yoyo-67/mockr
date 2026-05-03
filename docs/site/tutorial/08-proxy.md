@@ -24,7 +24,7 @@ import { mockr, handler } from '@yoyo-org/mockr';
 
 const TARGET = process.env.PROXY_TARGET || 'https://jsonplaceholder.typicode.com';
 
-await mockr({
+mockr({
   port: 3008,
   proxy: { target: TARGET },
   endpoints: [

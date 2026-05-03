@@ -25,7 +25,7 @@ interface CartItem { id: number; product_id: number; quantity: number }
 
 type Endpoints = { '/internal/cart': CartItem[] };
 
-await mockr<Endpoints>({
+mockr<Endpoints>({
   port: 3007,
   endpoints: [
     { url: '/internal/cart', data: [] },

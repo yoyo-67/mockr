@@ -30,7 +30,7 @@ type Endpoints = {
   '/internal/cart': CartItem[];
 };
 
-await mockr<Endpoints>({
+mockr<Endpoints>({
   port: 3003,
   endpoints: [
     { url: '/internal/products', data: [/* ... */] },

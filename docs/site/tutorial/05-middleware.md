@@ -20,7 +20,7 @@ Middleware order matters — top of the array runs first. A `pre` that returns a
 ```ts
 import { mockr, handler, auth, delay, logger } from '@yoyo-org/mockr';
 
-const server = await mockr({
+mockr({
   port: 3005,
   middleware: [
     logger(),
@@ -30,6 +30,13 @@ const server = await mockr({
       validate: (token) => token === 'admin-token-123',
       exclude: ['/api/health', '/api/login'],
     }),
+    {
+      name: 'request-id',
+      post: (_req, res) => ({
+        ...res,
+        headers: { ...res.headers, 'x-request-id': `req-${Date.now()}` },
+      }),
+    },
   ],
   endpoints: [
     { url: '/api/health', data: { status: 'ok' } },
@@ -46,14 +53,6 @@ const server = await mockr({
     },
     { url: '/api/secret', data: { flag: 42 } },
   ],
-});
-
-server.use({
-  name: 'request-id',
-  post: (_req, res) => ({
-    ...res,
-    headers: { ...res.headers, 'x-request-id': `req-${Date.now()}` },
-  }),
 });
 ```
 

@@ -33,7 +33,7 @@ import { mockr, handler } from '@yoyo-org/mockr';
 interface Post { id: number; title: string; body: string }
 interface Todo { id: number; completed: boolean; title: string }
 
-await mockr({
+mockr({
   port: 3009,
   proxy: { target: 'https://jsonplaceholder.typicode.com' },
   endpoints: [

@@ -7,7 +7,7 @@
 import { mockr, handler } from '../../src/index.js';
 import { z } from 'zod';
 
-const server = await mockr({
+mockr({
   port: 3004,
   endpoints: [
     // Validate request body. Wrong shape → 400 with zod issue list.
@@ -50,6 +50,6 @@ const server = await mockr({
   ],
 });
 
-console.log(`Handlers + zod example running at ${server.url}`);
+console.log(`Handlers + zod example running at http://localhost:3004`);
 console.log(`  POST   /api/orders                          (body schema)`);
 console.log(`  GET    /api/users/:userId/orders?status=…   (params + query schema)`);
