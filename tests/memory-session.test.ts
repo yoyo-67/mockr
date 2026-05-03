@@ -231,6 +231,32 @@ describe('MemorySessionStore', () => {
     });
   });
 
+  describe('deleteEntry', () => {
+    it('removes a single entry by key and returns true; false if missing', () => {
+      const store = createMemorySessionStore();
+      const s = store.create('x');
+      store.setActive(s.id, 'record');
+
+      store.recordResponse(
+        { method: 'GET', path: '/a', query: {} },
+        { status: 200, headers: {}, body: {}, contentType: 'application/json' },
+      );
+      store.recordResponse(
+        { method: 'GET', path: '/b', query: {} },
+        { status: 200, headers: {}, body: {}, contentType: 'application/json' },
+      );
+      expect(s.entries.size).toBe(2);
+
+      expect(store.deleteEntry(s.id, 'GET /a')).toBe(true);
+      expect(s.entries.size).toBe(1);
+      expect(s.entries.has('GET /a')).toBe(false);
+      expect(s.entries.has('GET /b')).toBe(true);
+
+      expect(store.deleteEntry(s.id, 'GET /missing')).toBe(false);
+      expect(store.deleteEntry('missing-session', 'GET /a')).toBe(false);
+    });
+  });
+
   describe('clear', () => {
     it('clear(id) empties entries but keeps the session', () => {
       const store = createMemorySessionStore();

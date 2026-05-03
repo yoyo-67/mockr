@@ -1,0 +1,15 @@
+### Health check — auth excluded.
+GET http://localhost:3005/api/health
+
+### Login — auth excluded, returns a token.
+POST http://localhost:3005/api/login
+Content-Type: application/json
+
+{ "email": "admin@example.com" }
+
+### Secret — needs Bearer admin-token-123.
+GET http://localhost:3005/api/secret
+Authorization: Bearer admin-token-123
+
+### Same secret without token → 401 from auth middleware.
+GET http://localhost:3005/api/secret

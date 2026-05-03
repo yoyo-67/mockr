@@ -8,16 +8,40 @@ import type {
   MockrRequest,
   HandlerResult,
   Middleware,
-  EndpointHandle,
   HandlerContext,
   ParseableSchema,
 } from './types.js';
+import type { EndpointHandle } from './endpoint-handle.js';
+import { createListHandle } from './list-handle.js';
+import { createRecordHandle, type RecordHandle } from './record-handle.js';
 import { createEndpointHandle } from './endpoint-handle.js';
+import { isHandlerSpec } from './handler.js';
+import { isFileRef, getFilePath } from './file.js';
 import { createMatcher } from './router.js';
 import { createRecorder, type Recorder } from './recorder.js';
 import { createMemorySessionStore, type MemorySessionStore } from './memory-session.js';
 import { parseQuery, getPath, readBody, sendJson, sendRaw } from './http-utils.js';
 import { handleControlRoute, type InternalEndpoint } from './control-routes.js';
+import { validateConfig, formatErrors } from './config-validator.js';
+import { createDataFileWatcher } from './data-file-watcher.js';
+
+/**
+ * Warn at boot when a list endpoint's items lack the configured `idKey`.
+ * Default fallback (array index) is preserved; the warning surfaces the
+ * silent fallback so junior devs don't debug for hours.
+ */
+function warnIfMissingIdKey(url: string, data: unknown, idKey: string): void {
+  if (!Array.isArray(data) || data.length === 0) return;
+  const hasKey = data.some(
+    (item) => item != null && typeof item === 'object' && idKey in item,
+  );
+  if (!hasKey) {
+    console.warn(
+      `mockr: endpoint ${url} — idKey '${idKey}' not found on items, ` +
+        `defaulting to array index. Set idKey explicitly or add the field to your data.`,
+    );
+  }
+}
 
 function parseCli(): { tui?: boolean; port?: number; proxy?: string; recorder?: boolean } {
   try {
@@ -60,6 +84,12 @@ Options:
 export async function mockr<TEndpoints = Record<string, unknown>>(
   config: MockrConfig<TEndpoints> = {},
 ): Promise<MockrServer<TEndpoints>> {
+  // Boot-time validation — throws aggregated error on bad config before any I/O.
+  const validation = validateConfig(config as MockrConfig<any>);
+  if (!validation.valid) {
+    throw new Error(formatErrors(validation.errors));
+  }
+
   // CLI args override config
   const cli = parseCli();
   if (cli.tui !== undefined) config = { ...config, tui: cli.tui };
@@ -82,11 +112,57 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
   const endpoints: InternalEndpoint[] = [];
   const middlewares: Middleware[] = [...(config.middleware || [])];
   const scenarios = config.scenarios || {};
+  const dataFileWatcher = createDataFileWatcher();
   const memorySessions: MemorySessionStore = createMemorySessionStore();
   let proxyEnabled = !!config.proxy;
   let proxyTarget = config.proxy?.target ?? null;
   const proxyTargets = config.proxy?.targets ?? null;
   let activeScenarioName: string | null = null;
+
+  // Per-endpoint record handles (for `data: T` non-array endpoints).
+  // Stored separately so `server.endpoint()` returns the same instance the
+  // request handler reads from.
+  const recordHandles = new Map<InternalEndpoint, RecordHandle<object>>();
+
+  function pushDataEndpoint(
+    url: string | RegExp,
+    matcher: ReturnType<typeof createMatcher>,
+    method: string | undefined,
+    initial: unknown,
+    idKey: string,
+    filePath?: string,
+  ): InternalEndpoint {
+    const ep: InternalEndpoint = {
+      url,
+      method,
+      matcher,
+      listHandle: null,
+      staticBody: undefined,
+      staticResponse: { status: 200, headers: {}, body: undefined },
+      activeHandler: null,
+      idKey,
+      isData: true,
+      isHandler: false,
+      isStatic: false,
+      handlerFn: null,
+      schemas: null,
+      disabled: false,
+      filePath,
+    };
+    if (Array.isArray(initial)) {
+      ep.listHandle = createListHandle(initial as Record<string, unknown>[], { idKey });
+    } else if (typeof initial === 'object' && initial !== null) {
+      recordHandles.set(ep, createRecordHandle(initial as object));
+    } else {
+      // Primitive `data` — treat as static body (no mutation handle).
+      ep.isData = false;
+      ep.isStatic = true;
+      ep.staticBody = initial;
+      ep.staticResponse = { status: 200, headers: {}, body: initial };
+    }
+    endpoints.push(ep);
+    return ep;
+  }
 
   // Load fixture file
   if (config.fixtureFile) {
@@ -95,13 +171,24 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     const fixtures = JSON.parse(raw) as Record<string, unknown>;
     for (const [url, value] of Object.entries(fixtures)) {
       if (Array.isArray(value)) {
-        const handle = createEndpointHandle(value, url);
-        endpoints.push({ url, matcher: createMatcher(url), handle, isData: true, isHandler: false, isStatic: false, handlerFn: null, idKey: 'id', schemas: null, disabled: false, filePath: fixtureFilePath });
+        pushDataEndpoint(url, createMatcher(url), undefined, value, 'id', fixtureFilePath);
       } else {
-        const handle = createEndpointHandle([], url);
-        handle.body = value;
-        handle.response = { status: 200, headers: {}, body: value };
-        endpoints.push({ url, matcher: createMatcher(url), handle, idKey: 'id', isData: false, isHandler: false, isStatic: true, handlerFn: null, schemas: null, disabled: false, filePath: fixtureFilePath });
+        endpoints.push({
+          url,
+          matcher: createMatcher(url),
+          listHandle: null,
+          staticBody: value,
+          staticResponse: { status: 200, headers: {}, body: value },
+          activeHandler: null,
+          idKey: 'id',
+          isData: false,
+          isHandler: false,
+          isStatic: true,
+          handlerFn: null,
+          schemas: null,
+          disabled: false,
+          filePath: fixtureFilePath,
+        });
       }
     }
   }
@@ -112,110 +199,227 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     const matcher = createMatcher(def.url);
 
     if ('data' in def && def.data !== undefined) {
-      const key = (def as any).idKey || 'id';
-      const handle = createEndpointHandle(def.data as unknown[], urlStr, key);
-      endpoints.push({ url: def.url, method: def.method, matcher, handle, idKey: key, isData: true, isHandler: false, isStatic: false, handlerFn: null, schemas: null, disabled: false });
+      const key = def.idKey || 'id';
+      warnIfMissingIdKey(urlStr, def.data, key);
+      const ep = pushDataEndpoint(def.url, matcher, def.method, def.data, key);
+      if (def.methods) ep.methods = def.methods as InternalEndpoint['methods'];
     } else if ('dataFile' in def && def.dataFile !== undefined) {
-      // Load initial data and re-read from disk on each request (live reload)
-      const filePath = resolve(def.dataFile);
+      // Load initial data once, then keep it in memory. A file watcher
+      // refreshes the handle's data when the JSON file changes on disk
+      // (reset semantics: in-memory mutations are dropped on reload).
+      // `dataFile` may be a plain string path or a typed `FileRef` produced
+      // by `file<T>('./x.json')`.
+      const rawPath = isFileRef(def.dataFile) ? getFilePath(def.dataFile) : def.dataFile;
+      const filePath = resolve(rawPath);
       const raw = await readFile(filePath, 'utf-8');
       const fileData = JSON.parse(raw);
-      const key = (def as any).idKey || 'id';
-      const handle = createEndpointHandle(Array.isArray(fileData) ? fileData : [], urlStr, key);
-      if (!Array.isArray(fileData)) {
-        handle.body = fileData;
-        handle.response = { status: 200, headers: {}, body: fileData };
-      }
-      const handlerFn: InternalEndpoint['handlerFn'] = async () => {
-        const freshRaw = await readFile(filePath, 'utf-8');
-        const freshData = JSON.parse(freshRaw);
-        if (Array.isArray(freshData)) {
-          handle.data = freshData;
+      const key = def.idKey || 'id';
+      warnIfMissingIdKey(urlStr, fileData, key);
+      const ep = pushDataEndpoint(def.url, matcher, def.method, fileData, key, filePath);
+      ep.filePath = filePath;
+      if (def.methods) ep.methods = def.methods as InternalEndpoint['methods'];
+
+      // Hot-reload: update handle when the file changes.
+      dataFileWatcher.register(filePath, (newData: unknown) => {
+        if (Array.isArray(newData)) {
+          if (!ep.listHandle) ep.listHandle = createListHandle(newData as Record<string, unknown>[], { idKey: key });
+          else ep.listHandle.replaceData(newData as Record<string, unknown>[]);
+        } else if (typeof newData === 'object' && newData !== null) {
+          ep.staticBody = newData;
+          ep.staticResponse = { status: 200, headers: {}, body: newData };
+          const rec = recordHandles.get(ep);
+          if (rec) rec.replace(newData as object);
+          else recordHandles.set(ep, createRecordHandle(newData as object));
         } else {
-          handle.body = freshData;
-          handle.response = { status: 200, headers: {}, body: freshData };
+          // Primitive — treat as static body.
+          ep.staticBody = newData;
+          ep.staticResponse = { status: 200, headers: {}, body: newData };
         }
-        return { status: 200, body: freshData };
-      };
-      handle.handler = handlerFn;
-      endpoints.push({ url: def.url, method: def.method, matcher, handle, idKey: key, isData: Array.isArray(fileData), isHandler: true, isStatic: false, handlerFn, schemas: null, disabled: false, filePath });
+      });
     } else if ('handler' in def && def.handler !== undefined) {
       const h = def.handler;
-      const isValidated = typeof h === 'object' && 'fn' in h;
-      const handlerFn = (isValidated ? h.fn : h) as InternalEndpoint['handlerFn'];
-      const schemas: InternalEndpoint['schemas'] = isValidated
-        ? { body: (h as any).body, query: (h as any).query, params: (h as any).params }
+      const isSpec = isHandlerSpec(h);
+      const handlerFn = (isSpec ? h.fn : h) as InternalEndpoint['handlerFn'];
+      const schemas: InternalEndpoint['schemas'] = isSpec
+        ? { body: h.body, query: h.query, params: h.params }
         : null;
-      const handle = createEndpointHandle([], urlStr);
-      handle.handler = handlerFn;
-      endpoints.push({ url: def.url, method: def.method, matcher, handle, idKey: 'id', isData: false, isHandler: true, isStatic: false, handlerFn, schemas, disabled: false });
-    } else if ('response' in def && def.response !== undefined) {
-      const handle = createEndpointHandle([], urlStr);
-      handle.body = def.response.body;
-      handle.response = { status: def.response.status, headers: def.response.headers || {}, body: def.response.body };
-      endpoints.push({ url: def.url, method: def.method, matcher, handle, idKey: 'id', isData: false, isHandler: false, isStatic: true, handlerFn: null, schemas: null, disabled: false });
-    } else if ('body' in def && def.body !== undefined) {
-      const handle = createEndpointHandle([], urlStr);
-      handle.body = def.body;
-      handle.response = { status: 200, headers: {}, body: def.body };
-      endpoints.push({ url: def.url, method: def.method, matcher, handle, idKey: 'id', isData: false, isHandler: false, isStatic: true, handlerFn: null, schemas: null, disabled: false });
+      endpoints.push({
+        url: def.url,
+        method: def.method,
+        matcher,
+        listHandle: null,
+        staticBody: undefined,
+        staticResponse: { status: 200, headers: {}, body: undefined },
+        activeHandler: handlerFn,
+        idKey: 'id',
+        isData: false,
+        isHandler: true,
+        isStatic: false,
+        handlerFn,
+        schemas,
+        disabled: false,
+      });
+    } else if ('methods' in def && def.methods !== undefined) {
+      // Standalone `methods` form — no data store, all verbs explicit. Per-verb
+      // dispatch happens in the request handler via `ep.methods`.
+      endpoints.push({
+        url: def.url,
+        matcher,
+        listHandle: null,
+        staticBody: undefined,
+        staticResponse: { status: 200, headers: {}, body: undefined },
+        activeHandler: null,
+        idKey: 'id',
+        isData: false,
+        isHandler: true,
+        isStatic: false,
+        handlerFn: null,
+        schemas: null,
+        disabled: false,
+        methods: def.methods as InternalEndpoint['methods'],
+      });
     }
+    // No `body` / `response` shorthand — use `data: T` (record) for static
+    // payloads, or `handler` for custom status/headers.
+    void urlStr;
+  }
+
+  /** Pick the right kind of public handle for an endpoint. */
+  function getEndpointHandleFor(ep: InternalEndpoint): EndpointHandle<unknown> | null {
+    if (ep.listHandle) return ep.listHandle as unknown as EndpointHandle<unknown>;
+    const rec = recordHandles.get(ep);
+    if (rec) return rec as unknown as EndpointHandle<unknown>;
+    return null;
   }
 
   // Endpoint lookup for handlers
   function getEndpointHandle(url: string): EndpointHandle<unknown> {
     for (const ep of endpoints) {
       const epUrl = typeof ep.url === 'string' ? ep.url : ep.url.source;
-      if (epUrl === url) return ep.handle;
+      if (epUrl === url) {
+        const handle = getEndpointHandleFor(ep);
+        if (handle) return handle;
+        throw new Error(`Endpoint '${url}' has no data handle (it is a handler-only or static endpoint).`);
+      }
     }
     throw new Error(`Endpoint not found: ${url}`);
   }
 
-  const handlerContext: HandlerContext = {
-    endpoints: ((url: string) => getEndpointHandle(url)) as HandlerContext['endpoints'],
-  };
+  // Module-level slice of HandlerContext shared across requests. Per-request
+  // augmentation (currently `forward`) happens in `handleRequest`.
+  const handlerContextEndpoint: HandlerContext['endpoint'] =
+    ((url: string) => getEndpointHandle(url)) as HandlerContext['endpoint'];
+
+  /**
+   * Build a scenario-flavored handle on top of an endpoint's underlying
+   * handle. Adds a writable `handler` slot that mutates `ep.activeHandler`,
+   * so old-style `s.endpoint(url).handler = fn` keeps working until issue 009
+   * lands declarative scenarios.
+   */
+  function buildScenarioHandle(ep: InternalEndpoint, base: EndpointHandle<unknown>) {
+    return new Proxy(base as object, {
+      get(target, prop, receiver) {
+        if (prop === 'handler') return ep.activeHandler;
+        return Reflect.get(target, prop, receiver);
+      },
+      set(target, prop, value, receiver) {
+        if (prop === 'handler') {
+          ep.activeHandler = value as InternalEndpoint['activeHandler'];
+          return true;
+        }
+        return Reflect.set(target, prop, value, receiver);
+      },
+      has(target, prop) {
+        if (prop === 'handler') return true;
+        return Reflect.has(target, prop);
+      },
+    }) as EndpointHandle<unknown>;
+  }
+
+  function findEndpointByUrl(url: string): InternalEndpoint | undefined {
+    for (const ep of endpoints) {
+      const epUrl = typeof ep.url === 'string' ? ep.url : ep.url.source;
+      if (epUrl === url) return ep;
+    }
+    return undefined;
+  }
 
   // Scenarios
   function applyScenario(name: string) {
     for (const ep of endpoints) {
-      if (ep.isData) ep.handle.reset();
-      if (ep.isHandler) ep.handle.handler = ep.handlerFn;
+      if (ep.listHandle) ep.listHandle.reset();
+      const rec = recordHandles.get(ep);
+      if (rec) rec.reset();
+      ep.activeHandler = ep.handlerFn;
     }
-    const scenarioFn = scenarios[name];
+    const scenarioFn = scenarios[name] as ((s: { endpoint: (url: string) => unknown }) => void) | undefined;
     if (scenarioFn) {
-      const setup = { endpoint: (url: string) => getEndpointHandle(url) };
-      (scenarioFn as (s: typeof setup) => void)(setup);
+      const setup = {
+        endpoint: (url: string) => {
+          const ep = findEndpointByUrl(url);
+          if (!ep) throw new Error(`Endpoint not found: ${url}`);
+          const base = getEndpointHandleFor(ep);
+          if (!base) throw new Error(`Endpoint '${url}' has no data handle.`);
+          return buildScenarioHandle(ep, base);
+        },
+      };
+      scenarioFn(setup);
     }
     activeScenarioName = name;
   }
 
-  // Data CRUD
-  function handleDataCrud(ep: InternalEndpoint, method: string, path: string, body: unknown): HandlerResult | null {
+  // Data CRUD (list endpoints)
+  function handleListCrud(ep: InternalEndpoint, method: string, path: string, body: unknown): HandlerResult | null {
+    const list = ep.listHandle;
+    if (!list) return null;
     const epUrl = typeof ep.url === 'string' ? ep.url : null;
     if (!epUrl) return null;
     const isExactMatch = path === epUrl;
     const subPath = !isExactMatch && path.startsWith(epUrl + '/') ? path.slice(epUrl.length + 1) : null;
 
-    if (method === 'GET' && isExactMatch) return { status: 200, body: ep.handle.data };
+    if (method === 'GET' && isExactMatch) return { status: 200, body: list.data };
     if (method === 'GET' && subPath) {
-      const item = ep.handle.findById(subPath);
+      const item = list.findById(subPath);
       return item ? { status: 200, body: item } : { status: 404, body: { error: 'Not found' } };
     }
     if (method === 'POST' && isExactMatch) {
       const item = (body || {}) as Record<string, unknown>;
-      if (!(ep.idKey in item) || item[ep.idKey] == null) item[ep.idKey] = ep.handle.nextId();
-      return { status: 201, body: ep.handle.insert(item) };
+      if (!(ep.idKey in item) || item[ep.idKey] == null) item[ep.idKey] = list.nextId();
+      return { status: 201, body: list.insert(item) };
     }
     if (method === 'PUT' && subPath) {
-      if (!ep.handle.findById(subPath)) return { status: 404, body: { error: 'Not found' } };
-      return { status: 200, body: ep.handle.update(subPath, (body || {}) as Record<string, unknown>) };
+      if (!list.findById(subPath)) return { status: 404, body: { error: 'Not found' } };
+      return { status: 200, body: list.update(subPath, (body || {}) as Record<string, unknown>) };
     }
     if (method === 'PATCH' && subPath) {
-      if (!ep.handle.findById(subPath)) return { status: 404, body: { error: 'Not found' } };
-      return { status: 200, body: ep.handle.update(subPath, (body || {}) as Record<string, unknown>) };
+      if (!list.findById(subPath)) return { status: 404, body: { error: 'Not found' } };
+      return { status: 200, body: list.update(subPath, (body || {}) as Record<string, unknown>) };
     }
     if (method === 'DELETE' && subPath) {
-      return ep.handle.remove(subPath) ? { status: 200, body: { deleted: true } } : { status: 404, body: { error: 'Not found' } };
+      return list.remove(subPath) ? { status: 200, body: { deleted: true } } : { status: 404, body: { error: 'Not found' } };
+    }
+    return null;
+  }
+
+  // Record CRUD (single-object data endpoints)
+  function handleRecordCrud(ep: InternalEndpoint, method: string, path: string, body: unknown): HandlerResult | null {
+    const rec = recordHandles.get(ep);
+    if (!rec) return null;
+    const epUrl = typeof ep.url === 'string' ? ep.url : null;
+    if (!epUrl || path !== epUrl) return null;
+
+    if (method === 'GET') return { status: 200, body: rec.data };
+    if (method === 'PATCH' && body && typeof body === 'object') {
+      rec.set(body as Partial<object>);
+      return { status: 200, body: rec.data };
+    }
+    if (method === 'PUT' && body && typeof body === 'object') {
+      rec.replace(body as object);
+      return { status: 200, body: rec.data };
+    }
+    if (method === 'DELETE') {
+      rec.replace({});
+      return { status: 200, body: { deleted: true } };
     }
     return null;
   }
@@ -283,6 +487,62 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
 
     const fakeReq: MockrRequest = { method, path, params: {}, query, headers: reqHeaders, body };
 
+    // Per-request ctx — augments shared `handlerContext` with `forward` that
+    // captures the current request and dispatches to the configured proxy.
+    let forwardUsed = false;
+    const ctx: HandlerContext = {
+      endpoint: handlerContextEndpoint,
+      forward: (async (patch?: import('./types.js').ForwardPatch) => {
+        if (!proxyTarget) {
+          throw new Error('ctx.forward() requires proxy.target in mockr config');
+        }
+        forwardUsed = true;
+        const fwdMethod = (patch?.method ?? method).toUpperCase();
+        const fwdPath = patch?.path ?? fullUrl;
+        const baseHeaders = patch?.headers ?? reqHeaders;
+        // Drop hop-by-hop / body-derived headers — when method or body changes
+        // they no longer match. fetch will recompute as needed.
+        const fwdHeaders: Record<string, string | string[] | undefined> = {};
+        for (const [k, v] of Object.entries(baseHeaders)) {
+          const lk = k.toLowerCase();
+          if (lk === 'content-length' || lk === 'transfer-encoding' || lk === 'connection') continue;
+          fwdHeaders[k] = v;
+        }
+        const fwdBody = patch && 'body' in patch ? patch.body : body;
+
+        // Mem-session lookup BEFORE fetch — replay returns cached upstream
+        // response so handler mutation runs fresh on a clone (cache stays clean).
+        const cacheKey = { method: fwdMethod, path: getPath(fwdPath), query: parseQuery(fwdPath) };
+        const cached = memorySessions.lookupResponse(cacheKey);
+        if (cached) {
+          return {
+            status: cached.status,
+            body: structuredClone(cached.body),
+            headers: { ...cached.headers },
+          } as { status: number; body: unknown; headers: Record<string, string | string[]> };
+        }
+
+        const result = await handleProxy(fwdMethod, fwdPath, fwdHeaders, fwdBody);
+        if (!result) throw new Error('ctx.forward() proxy target unreachable');
+
+        // Record AFTER fetch — snapshot upstream pre-mutation. Handler will
+        // mutate `result.body` next; we deep-copy so the cached entry is
+        // immune to that mutation.
+        const ctHeader = result.headers && (result.headers as Record<string, unknown>)['content-type'];
+        const contentType = (typeof ctHeader === 'string' ? ctHeader : '') || 'application/json';
+        const bodyText = typeof result.body === 'string' ? result.body : JSON.stringify(result.body);
+        memorySessions.recordResponse(cacheKey, {
+          status: result.status || 200,
+          headers: result.headers || {},
+          body: typeof result.body === 'object' && result.body !== null ? structuredClone(result.body) : result.body,
+          bodyText,
+          contentType,
+        });
+
+        return result as { status: number; body: unknown; headers: Record<string, string | string[]> };
+      }) as HandlerContext['forward'],
+    };
+
     // Scenario switching
     if (path === '/__mockr/scenario' && method === 'POST') {
       const reqBody = body as { name?: string } | undefined;
@@ -296,7 +556,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     // Control routes (/__mockr/*)
     if (path.startsWith('/__mockr/')) {
       const handled = await handleControlRoute(path, method, body, res, {
-        recorder, endpoints, mocksDir, serverFile, scenarios: scenarios as Record<string, unknown>, memorySessions,
+        recorder, endpoints, mocksDir, serverFile, scenarios: scenarios as Record<string, unknown>, memorySessions, recordHandles,
       });
       if (handled) return;
     }
@@ -310,18 +570,52 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     }
 
     let handlerResult: HandlerResult | null = null;
-    let source: 'mock' | 'proxy' | '404' = '404';
+    let source: 'mock' | 'proxy' | '404' | 'fwd' = '404';
 
     // 1. Try endpoints (first match wins)
     for (const ep of endpoints) {
       if (ep.disabled) continue;
 
+      // Methods-map dispatch — overlays default behavior. When the request's
+      // verb is in `ep.methods`, run that handler. When the verb is missing
+      // AND the endpoint has no data fallback, respond 405 with `Allow`.
+      if (ep.methods) {
+        const routeMatch = ep.matcher(path);
+        const epUrlStr = typeof ep.url === 'string' ? ep.url : null;
+        const urlMatches =
+          routeMatch !== null ||
+          (epUrlStr !== null && (path === epUrlStr || path.startsWith(epUrlStr + '/')));
+        if (urlMatches) {
+          const spec = ep.methods[method];
+          if (spec) {
+            fakeReq.params = (routeMatch?.params ?? {}) as Record<string, string>;
+            const validationError = validateSchemas(
+              { body: spec.body, query: spec.query, params: spec.params },
+              fakeReq,
+            );
+            if (validationError) { handlerResult = validationError; source = 'mock'; break; }
+            handlerResult = await spec.fn(fakeReq, ctx);
+            source = 'mock';
+            break;
+          }
+          // Verb not in methods map. If endpoint has no data fallback, 405.
+          if (!ep.isData) {
+            const allowed = Object.keys(ep.methods).join(', ');
+            res.statusCode = 405;
+            res.setHeader('Allow', allowed);
+            res.end();
+            return;
+          }
+          // Else: fall through to default CRUD dispatch below.
+        }
+      }
+
       if (ep.isData) {
-        if (ep.handle.handler) {
+        if (ep.activeHandler) {
           const routeMatch = ep.matcher(path);
           if (routeMatch) {
             fakeReq.params = routeMatch.params as Record<string, string>;
-            handlerResult = await ep.handle.handler(fakeReq, handlerContext);
+            handlerResult = await ep.activeHandler(fakeReq, ctx);
             source = 'mock';
             break;
           }
@@ -330,7 +624,11 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
         if (epUrl) {
           if (path === epUrl || path.startsWith(epUrl + '/')) {
             if (ep.method && ep.method.toUpperCase() !== method) continue;
-            handlerResult = handleDataCrud(ep, method, path, body);
+            if (ep.listHandle) {
+              handlerResult = handleListCrud(ep, method, path, body);
+            } else if (recordHandles.has(ep)) {
+              handlerResult = handleRecordCrud(ep, method, path, body);
+            }
             if (handlerResult) { source = 'mock'; break; }
           }
         }
@@ -342,12 +640,12 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       if (ep.method && ep.method.toUpperCase() !== method) continue;
 
       if (ep.isHandler) {
-        const handlerFn = ep.handle.handler;
+        const handlerFn = ep.activeHandler;
         if (handlerFn) {
           fakeReq.params = routeMatch.params as Record<string, string>;
           const validationError = validateSchemas(ep.schemas, fakeReq);
           if (validationError) { handlerResult = validationError; source = 'mock'; break; }
-          handlerResult = await handlerFn(fakeReq, handlerContext);
+          handlerResult = await handlerFn(fakeReq, ctx);
           source = 'mock';
           break;
         }
@@ -355,22 +653,22 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
 
       if (ep.isStatic) {
         if (method === 'GET') {
-          handlerResult = { status: ep.handle.response.status, body: ep.handle.response.body, headers: ep.handle.response.headers };
-        } else if (method === 'PATCH' && typeof ep.handle.body === 'object' && ep.handle.body !== null) {
-          const patched = { ...(ep.handle.body as Record<string, unknown>), ...(body as Record<string, unknown>) };
-          ep.handle.body = patched;
-          ep.handle.response = { ...ep.handle.response, body: patched };
+          handlerResult = { status: ep.staticResponse.status, body: ep.staticResponse.body, headers: ep.staticResponse.headers };
+        } else if (method === 'PATCH' && typeof ep.staticBody === 'object' && ep.staticBody !== null) {
+          const patched = { ...(ep.staticBody as Record<string, unknown>), ...(body as Record<string, unknown>) };
+          ep.staticBody = patched;
+          ep.staticResponse = { ...ep.staticResponse, body: patched };
           handlerResult = { status: 200, body: patched };
         } else if (method === 'PUT') {
-          ep.handle.body = body;
-          ep.handle.response = { ...ep.handle.response, body };
+          ep.staticBody = body;
+          ep.staticResponse = { ...ep.staticResponse, body };
           handlerResult = { status: 200, body };
         } else if (method === 'DELETE') {
-          ep.handle.body = {};
-          ep.handle.response = { ...ep.handle.response, body: {} };
+          ep.staticBody = {};
+          ep.staticResponse = { ...ep.staticResponse, body: {} };
           handlerResult = { status: 200, body: { deleted: true } };
         } else {
-          handlerResult = { status: ep.handle.response.status, body: ep.handle.response.body, headers: ep.handle.response.headers };
+          handlerResult = { status: ep.staticResponse.status, body: ep.staticResponse.body, headers: ep.staticResponse.headers };
         }
         source = 'mock';
         break;
@@ -425,7 +723,8 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
 
     const status = handlerResult.status || 200;
     const ms = (performance.now() - start).toFixed(0);
-    const tag = source === 'mock' ? 'mock' : source === 'proxy' ? '  ->' : ' 404';
+    if (source === 'mock' && forwardUsed) source = 'fwd';
+    const tag = source === 'mock' ? 'mock' : source === 'proxy' ? '  ->' : source === 'fwd' ? ' fwd' : ' 404';
     console.log(`  ${tag}  ${method.padEnd(6)} ${status} ${fullUrl} ${ms}ms`);
 
     if ('raw' in handlerResult && handlerResult.raw) {
@@ -468,18 +767,30 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
         use(middleware: Middleware) { middlewares.push(middleware); },
         async scenario(name: string) { applyScenario(name); },
         async reset() {
-          for (const ep of endpoints) { if (ep.isData) ep.handle.reset(); ep.handle.handler = ep.handlerFn; }
+          for (const ep of endpoints) {
+            if (ep.listHandle) ep.listHandle.reset();
+            const rec = recordHandles.get(ep);
+            if (rec) rec.reset();
+            ep.activeHandler = ep.handlerFn;
+          }
         },
         async save(savePath: string) {
           const snapshot: Record<string, unknown> = {};
           for (const ep of endpoints) {
             const key = typeof ep.url === 'string' ? ep.url : ep.url.source;
-            if (ep.isData) snapshot[key] = ep.handle.data;
-            else if (ep.isStatic) snapshot[key] = ep.handle.body;
+            if (ep.listHandle) snapshot[key] = ep.listHandle.data;
+            else {
+              const rec = recordHandles.get(ep);
+              if (rec) snapshot[key] = rec.data;
+              else if (ep.isStatic) snapshot[key] = ep.staticBody;
+            }
           }
           await writeFile(resolve(savePath), JSON.stringify(snapshot, null, 2), 'utf-8');
         },
-        async close() { return new Promise<void>((res, rej) => { server.close((err) => (err ? rej(err) : res())); }); },
+        async close() {
+          dataFileWatcher.closeAll();
+          return new Promise<void>((res, rej) => { server.close((err) => (err ? rej(err) : res())); });
+        },
         async setPort(newPort: number) {
           await new Promise<void>((res, rej) => { server.close((err) => (err ? rej(err) : res())); });
           await new Promise<void>((res, rej) => {
@@ -499,7 +810,8 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
           return endpoints.map((ep) => {
             const epUrl = typeof ep.url === 'string' ? ep.url : ep.url.source;
             const type = ep.isData ? 'data' as const : ep.isHandler ? 'handler' as const : 'static' as const;
-            return { url: epUrl, method: ep.method?.toUpperCase() || 'ALL', type, enabled: !ep.disabled, itemCount: ep.isData ? (ep.handle.data as unknown[]).length : null };
+            const itemCount = ep.listHandle ? ep.listHandle.data.length : null;
+            return { url: epUrl, method: ep.method?.toUpperCase() || 'ALL', type, enabled: !ep.disabled, itemCount };
           });
         },
         enableEndpoint(epUrl: string, method?: string) {

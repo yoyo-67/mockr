@@ -2,28 +2,51 @@ import type { ServerResponse } from 'node:http';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
 import type { Recorder } from './recorder.js';
-import type { MemorySessionStore } from './memory-session.js';
+import type { MemorySessionStore, FilterCategory } from './memory-session.js';
 import type { MatchFn } from './router.js';
-import type { MockrRequest, HandlerResult, HandlerContext, ParseableSchema, EndpointHandle } from './types.js';
-import { createEndpointHandle } from './endpoint-handle.js';
+import type { MockrRequest, HandlerResult, HandlerContext, ParseableSchema } from './types.js';
+import type { HandlerSpec } from './handler.js';
+import type { ListHandle } from './list-handle.js';
+import { createListHandle } from './list-handle.js';
+import { createRecordHandle, type RecordHandle } from './record-handle.js';
 import { createMatcher } from './router.js';
 import { generateInterface, urlToFileName, urlToTypeName } from './type-generator.js';
 import { sendCorsJson, handleCorsOptions } from './http-utils.js';
 import { addEndpointToServerFile, removeEndpointFromServerFile, updateUrlInServerFile, changeToHandlerInServerFile } from './server-file-patcher.js';
 
+/** Raw HTTP response shape used by static/legacy code paths. */
+export interface StaticResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: unknown;
+}
+
 export interface InternalEndpoint {
   url: string | RegExp;
   method?: string;
   matcher: MatchFn;
-  handle: EndpointHandle<unknown>;
+  /** List handle when the endpoint is array-shaped data; null for handler/static. */
+  listHandle: ListHandle<Record<string, unknown>> | null;
+  /**
+   * Single-object body for static/record endpoints. Mutated by control-routes
+   * (PATCH/PUT/DELETE) and read at request time.
+   */
+  staticBody: unknown;
+  /** Pre-computed response for static endpoints. */
+  staticResponse: StaticResponse;
+  /** Active handler — may be swapped at runtime by scenarios. */
+  activeHandler: ((req: MockrRequest, ctx: HandlerContext<any>) => HandlerResult | Promise<HandlerResult>) | null;
   idKey: string;
   isData: boolean;
   isHandler: boolean;
   isStatic: boolean;
   disabled: boolean;
+  /** The handler the endpoint was originally configured with. Used by `reset()`. */
   handlerFn: ((req: MockrRequest, ctx: HandlerContext<any>) => HandlerResult | Promise<HandlerResult>) | null;
   schemas: { body?: ParseableSchema; query?: ParseableSchema; params?: ParseableSchema } | null;
   filePath?: string;
+  /** Per-verb handler overlay; takes precedence over default CRUD/handler dispatch. */
+  methods?: Partial<Record<string, HandlerSpec<any, any, any, any>>>;
 }
 
 interface ControlRoutesConfig {
@@ -33,6 +56,10 @@ interface ControlRoutesConfig {
   serverFile: string | null;
   scenarios: Record<string, unknown>;
   memorySessions: MemorySessionStore;
+  /** Per-endpoint record handles owned by the server. Populated when the
+   *  recorder maps a non-array body so the handle is reachable via
+   *  `server.endpoint(url)`. */
+  recordHandles: Map<InternalEndpoint, RecordHandle<object>>;
 }
 
 /**
@@ -45,7 +72,7 @@ export async function handleControlRoute(
   res: ServerResponse,
   config: ControlRoutesConfig,
 ): Promise<boolean> {
-  const { recorder, endpoints, mocksDir, serverFile, scenarios, memorySessions } = config;
+  const { recorder, endpoints, mocksDir, serverFile, scenarios, memorySessions, recordHandles } = config;
 
   // Scenario switching
   if (path === '/__mockr/scenario' && method === 'POST') {
@@ -136,7 +163,7 @@ export async function handleControlRoute(
 
   // POST /__mockr/map
   if (path === '/__mockr/map' && method === 'POST') {
-    await handleMap(body, res, recorder, endpoints, mocksDir, serverFile);
+    await handleMap(body, res, recorder, endpoints, mocksDir, serverFile, recordHandles);
     return true;
   }
 
@@ -147,7 +174,7 @@ export async function handleControlRoute(
       method: ep.method?.toUpperCase() || 'ALL',
       type: ep.isData ? 'data' : ep.isHandler ? 'handler' : 'static',
       enabled: !ep.disabled,
-      itemCount: ep.isData ? (ep.handle.data as unknown[]).length : null,
+      itemCount: ep.isData && ep.listHandle ? ep.listHandle.data.length : null,
       filePath: ep.filePath || null,
     }));
     sendCorsJson(res, 200, list);
@@ -221,33 +248,54 @@ export async function handleControlRoute(
       if (epUrl !== reqBody.url) continue;
       if (reqBody.method && (ep.method || 'ALL').toUpperCase() !== reqBody.method.toUpperCase()) continue;
 
-      if (reqBody.type === 'handler' && ep.isStatic) {
-        const currentBody = ep.handle.body;
-        const handlerFn: InternalEndpoint['handlerFn'] = async () => ({ status: 200, body: ep.handle.body ?? currentBody });
+      if (reqBody.type === 'handler' && (ep.isStatic || ep.isData)) {
+        const rec = recordHandles?.get(ep);
+        const snapshotBody = ep.isStatic
+          ? ep.staticBody
+          : ep.listHandle
+            ? ep.listHandle.data
+            : rec
+              ? rec.data
+              : ep.staticBody;
+        const handlerFn: InternalEndpoint['handlerFn'] = async () => ({ status: 200, body: snapshotBody });
+        recordHandles?.delete(ep);
+        ep.listHandle = null;
         ep.isStatic = false;
+        ep.isData = false;
         ep.isHandler = true;
         ep.handlerFn = handlerFn;
-        ep.handle.handler = handlerFn;
+        ep.activeHandler = handlerFn;
         updated = true;
         if (serverFile) {
           try { await changeToHandlerInServerFile(serverFile, reqBody.url); }
           catch (err) { console.error('[mockr] Failed to update server file:', err); }
         }
-      } else if (reqBody.type === 'static' && ep.isHandler) {
+      } else if (reqBody.type === 'static' && (ep.isHandler || ep.isData)) {
+        // If converting from record-data, snapshot the live record into staticBody.
+        if (ep.isData) {
+          const rec = recordHandles?.get(ep);
+          if (rec) ep.staticBody = rec.data;
+          else if (ep.listHandle) ep.staticBody = ep.listHandle.data;
+          recordHandles?.delete(ep);
+          ep.listHandle = null;
+        }
         ep.isHandler = false;
+        ep.isData = false;
         ep.isStatic = true;
         ep.handlerFn = null;
-        ep.handle.handler = null;
-        ep.handle.response = { status: 200, headers: {}, body: ep.handle.body };
+        ep.activeHandler = null;
+        ep.staticResponse = { status: 200, headers: {}, body: ep.staticBody };
         updated = true;
       } else if (reqBody.type === 'data') {
         ep.isHandler = false;
         ep.isStatic = false;
         ep.isData = true;
         ep.handlerFn = null;
-        ep.handle.handler = null;
-        const b = ep.handle.body;
-        if ((!Array.isArray(ep.handle.data) || ep.handle.data.length === 0) && Array.isArray(b)) ep.handle.data = b;
+        ep.activeHandler = null;
+        const b = ep.staticBody;
+        if (Array.isArray(b) && (!ep.listHandle || ep.listHandle.count() === 0)) {
+          ep.listHandle = createListHandle(b as Record<string, unknown>[], { idKey: ep.idKey });
+        }
         updated = true;
       }
       break;
@@ -274,7 +322,7 @@ export async function handleControlRoute(
   // GET /__mockr/map/endpoints
   if (path === '/__mockr/map/endpoints' && method === 'GET') {
     const mapped = endpoints
-      .filter(ep => typeof ep.url === 'string' && (ep.isStatic || ep.isHandler))
+      .filter(ep => typeof ep.url === 'string' && (ep.isStatic || ep.isHandler || ep.isData))
       .map(ep => ({ url: typeof ep.url === 'string' ? ep.url : '', method: ep.method?.toUpperCase() || 'ALL', enabled: !ep.disabled }));
     sendCorsJson(res, 200, mapped);
     return true;
@@ -317,6 +365,21 @@ async function handleMemSessionRoutes(
   if (path === '/__mockr/mem-sessions/deactivate' && method === 'POST') {
     store.setActive(null, 'off');
     sendCorsJson(res, 200, { active: null });
+    return true;
+  }
+
+  // POST /__mockr/mem-sessions/filter — set capture filter for active session
+  if (path === '/__mockr/mem-sessions/filter' && method === 'POST') {
+    const reqBody = body as { filter?: Record<string, boolean> | null } | undefined;
+    if (reqBody?.filter === null) {
+      store.setCaptureFilter(null);
+    } else if (reqBody?.filter && typeof reqBody.filter === 'object') {
+      store.setCaptureFilter(reqBody.filter as Record<FilterCategory, boolean>);
+    } else {
+      sendCorsJson(res, 400, { error: 'filter object or null required' });
+      return true;
+    }
+    sendCorsJson(res, 200, { filter: store.getCaptureFilter() });
     return true;
   }
 
@@ -364,6 +427,16 @@ async function handleMemSessionRoutes(
       sendCorsJson(res, 200, { cleared: true });
       return true;
     }
+
+    if (action === 'entries' && method === 'DELETE') {
+      const prefix = `${id}/entries/`;
+      const encodedKey = rest.startsWith(prefix) ? rest.slice(prefix.length) : '';
+      if (!encodedKey) { sendCorsJson(res, 400, { error: 'entry key required' }); return true; }
+      const key = decodeURIComponent(encodedKey);
+      const ok = store.deleteEntry(id, key);
+      sendCorsJson(res, ok ? 200 : 404, ok ? { deleted: key } : { error: 'Session or entry not found' });
+      return true;
+    }
   }
 
   return false;
@@ -376,6 +449,7 @@ async function handleMap(
   endpoints: InternalEndpoint[],
   mocksDir: string,
   serverFile: string | null,
+  recordHandles: Map<InternalEndpoint, RecordHandle<object>>,
 ) {
   const reqBody = body as {
     entries?: { url: string; method: string; status: number; contentType: string; body: string }[];
@@ -402,6 +476,32 @@ async function handleMap(
     return;
   }
 
+  // Pre-validate every entry before any file write or endpoint mutation.
+  // Atomic: either all entries map cleanly or none do.
+  const emptyBodyUrls: string[] = [];
+  const badJsonUrls: { url: string; reason: string }[] = [];
+  for (const entry of entriesToMap) {
+    if (!entry.body || entry.body.length === 0) {
+      emptyBodyUrls.push(entry.url);
+      continue;
+    }
+    if (entry.contentType.includes('json')) {
+      try { JSON.parse(entry.body); }
+      catch (err) {
+        badJsonUrls.push({ url: entry.url, reason: (err as Error).message });
+      }
+    }
+  }
+  if (emptyBodyUrls.length > 0) {
+    sendCorsJson(res, 400, { error: `Empty body — refusing to map: ${emptyBodyUrls.join(', ')}` });
+    return;
+  }
+  if (badJsonUrls.length > 0) {
+    const detail = badJsonUrls.map(b => `${b.url} (${b.reason})`).join('; ');
+    sendCorsJson(res, 400, { error: `Invalid JSON body — refusing to map: ${detail}` });
+    return;
+  }
+
   const generateTypes = reqBody?.generateTypes !== false;
   const mapped: { url: string; method: string; bodyFile: string; typesFile?: string }[] = [];
 
@@ -417,10 +517,9 @@ async function handleMap(
     const bodyFileRelative = './' + relative(process.cwd(), bodyFilePath);
     const bodyContent = entry.body;
 
-    // Write file
+    // Write file. JSON validity already checked in pre-validation pass — pretty-print on write.
     if (isJson) {
-      try { await writeFile(bodyFilePath, JSON.stringify(JSON.parse(bodyContent), null, 2), 'utf-8'); }
-      catch { await writeFile(bodyFilePath, bodyContent, 'utf-8'); }
+      await writeFile(bodyFilePath, JSON.stringify(JSON.parse(bodyContent), null, 2), 'utf-8');
     } else {
       await writeFile(bodyFilePath, bodyContent, 'utf-8');
     }
@@ -443,23 +542,37 @@ async function handleMap(
     const bodyData = isJson ? JSON.parse(bodyContent) : bodyContent;
     const isArray = Array.isArray(bodyData);
 
+    const isObject = !isArray && typeof bodyData === 'object' && bodyData !== null;
+
     let found = false;
     for (const ep of endpoints) {
       const epUrl = typeof ep.url === 'string' ? ep.url : null;
       if (epUrl === pathname && (!ep.method || ep.method.toUpperCase() === epMethod)) {
         if (isArray) {
-          ep.handle.data = bodyData;
+          ep.listHandle = createListHandle(bodyData as Record<string, unknown>[], { idKey: ep.idKey });
           ep.isData = true;
           ep.isStatic = false;
           ep.isHandler = false;
           ep.handlerFn = null;
-          ep.handle.handler = null;
+          ep.activeHandler = null;
+          recordHandles.delete(ep);
+        } else if (isObject) {
+          ep.staticBody = bodyData;
+          ep.staticResponse = { status: entry.status === 304 ? 200 : entry.status, headers: {}, body: bodyData };
+          ep.isData = true;
+          ep.isStatic = false;
+          ep.isHandler = false;
+          ep.listHandle = null;
+          const existingRec = recordHandles.get(ep);
+          if (existingRec) existingRec.replace(bodyData as object);
+          else recordHandles.set(ep, createRecordHandle(bodyData as object));
         } else {
-          ep.handle.body = bodyData;
-          ep.handle.response = { status: entry.status === 304 ? 200 : entry.status, headers: {}, body: bodyData };
+          ep.staticBody = bodyData;
+          ep.staticResponse = { status: entry.status === 304 ? 200 : entry.status, headers: {}, body: bodyData };
           ep.isStatic = true;
           ep.isData = false;
           ep.isHandler = false;
+          recordHandles.delete(ep);
         }
         found = true;
         break;
@@ -468,12 +581,14 @@ async function handleMap(
 
     if (!found) {
       if (isArray) {
-        const handle = createEndpointHandle(bodyData, pathname);
         endpoints.push({
           url: pathname,
           method: epMethod === 'GET' ? undefined : epMethod,
           matcher: createMatcher(pathname),
-          handle,
+          listHandle: createListHandle(bodyData as Record<string, unknown>[], { idKey: 'id' }),
+          staticBody: undefined,
+          staticResponse: { status: 200, headers: {}, body: undefined },
+          activeHandler: null,
           idKey: 'id',
           isData: true,
           isHandler: false,
@@ -483,15 +598,37 @@ async function handleMap(
           disabled: false,
           filePath: bodyFilePath,
         });
+      } else if (isObject) {
+        const status = entry.status === 304 ? 200 : entry.status;
+        const ep: InternalEndpoint = {
+          url: pathname,
+          method: epMethod === 'GET' ? undefined : epMethod,
+          matcher: createMatcher(pathname),
+          listHandle: null,
+          staticBody: bodyData,
+          staticResponse: { status, headers: {}, body: bodyData },
+          activeHandler: null,
+          idKey: 'id',
+          isData: true,
+          isHandler: false,
+          isStatic: false,
+          handlerFn: null,
+          schemas: null,
+          disabled: false,
+          filePath: bodyFilePath,
+        };
+        endpoints.push(ep);
+        recordHandles.set(ep, createRecordHandle(bodyData as object));
       } else {
-        const handle = createEndpointHandle([], pathname);
-        handle.body = bodyData;
-        handle.response = { status: entry.status === 304 ? 200 : entry.status, headers: {}, body: bodyData };
+        const status = entry.status === 304 ? 200 : entry.status;
         endpoints.push({
           url: pathname,
           method: epMethod === 'GET' ? undefined : epMethod,
           matcher: createMatcher(pathname),
-          handle,
+          listHandle: null,
+          staticBody: bodyData,
+          staticResponse: { status, headers: {}, body: bodyData },
+          activeHandler: null,
           idKey: 'id',
           isData: false,
           isHandler: false,
@@ -506,7 +643,7 @@ async function handleMap(
 
     // Patch server file
     if (serverFile) {
-      try { await addEndpointToServerFile(serverFile, { url: pathname, method: epMethod, filePath: bodyFileRelative, typesFile: typesAbsPath }); }
+      try { await addEndpointToServerFile(serverFile, { url: pathname, method: epMethod, filePath: bodyFileRelative, typesFile: typesAbsPath, isArray }); }
       catch (err) { console.error('[mockr] Failed to patch server file:', err); }
     }
 

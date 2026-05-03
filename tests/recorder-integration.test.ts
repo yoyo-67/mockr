@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mockr } from '../src/server.js';
+import { handler } from '../src/handler.js';
 import type { MockrServer } from '../src/types.js';
 import { mkdtemp, rm, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -23,7 +24,7 @@ describe('Recorder integration (server routes)', () => {
       port: 0,
       recorder: { sessionsDir, mocksDir },
       endpoints: [
-        { url: '/api/existing', body: { hello: 'world' } },
+        { url: '/api/existing', data: { hello: 'world' } },
       ],
     });
   }
@@ -159,7 +160,7 @@ describe('Recorder integration (server routes)', () => {
     mocksDir = await mkdtemp(join(tmpdir(), "mockr-mocks-"));
     const target = await mockr({
       port: 0,
-      endpoints: [{ url: "/api/target", body: "from-proxy" }],
+      endpoints: [{ url: "/api/target", handler: handler({ fn: () => ({ body: "from-proxy" }) }) }],
     });
     server = await mockr({
       port: 0,
@@ -253,7 +254,7 @@ describe('Recorder integration (server routes)', () => {
     expect(((await r3.json()) as any).name).toBe("A");
   });
 
-  it("maps object body as static endpoint", async () => {
+  it("maps object body as record-data endpoint", async () => {
     await setup();
 
     await fetch(`${server.url}/__mockr/map`, {
@@ -275,7 +276,8 @@ describe('Recorder integration (server routes)', () => {
     const eps = (await (
       await fetch(`${server.url}/__mockr/endpoints`)
     ).json()) as any[];
-    expect(eps.find((e: any) => e.url === "/api/config").type).toBe("static");
+    // Object body becomes a record-data endpoint in v0.3.0.
+    expect(eps.find((e: any) => e.url === "/api/config").type).toBe("data");
 
     const res = await fetch(`${server.url}/api/config`);
     expect(await res.json()).toEqual({ theme: "dark" });
@@ -499,8 +501,8 @@ describe('Recorder integration (server routes)', () => {
     const eps = (await (
       await fetch(`${server.url}/__mockr/endpoints`)
     ).json()) as any[];
-    // Object body → static (array body would be data)
-    expect(eps.find((e: any) => e.url === "/api/inline").type).toBe("static");
+    // Object body → record-data endpoint in v0.3.0 (array body would also be data).
+    expect(eps.find((e: any) => e.url === "/api/inline").type).toBe("data");
 
     const res = await fetch(`${server.url}/api/inline`);
     expect(res.status).toBe(200);
@@ -560,7 +562,8 @@ describe('Recorder integration (server routes)', () => {
     const eps = (await res.json()) as any[];
     const existing = eps.find((e: any) => e.url === "/api/existing");
     expect(existing).toBeTruthy();
-    expect(existing.type).toBe("static");
+    // Object `data` is now a record-shaped data endpoint (not 'static').
+    expect(existing.type).toBe("data");
     expect(existing.enabled).toBe(true);
   });
 
@@ -643,11 +646,11 @@ describe('Recorder integration (server routes)', () => {
 
   it("changes static endpoint to handler (preserves data)", async () => {
     await setup();
-    // /api/existing is a config-defined static endpoint
+    // /api/existing is a config-defined record-data endpoint in v0.3.0.
     let eps = (await (
       await fetch(`${server.url}/__mockr/endpoints`)
     ).json()) as any[];
-    expect(eps.find((e: any) => e.url === "/api/existing").type).toBe("static");
+    expect(eps.find((e: any) => e.url === "/api/existing").type).toBe("data");
 
     const typeRes = await fetch(`${server.url}/__mockr/endpoints/type`, {
       method: "PATCH",
@@ -829,7 +832,7 @@ type Endpoints = {
 const server = await mockr<Endpoints>({
   port: 0,
   endpoints: [
-    { url: '/api/existing', body: { hello: 'world' } },
+    { url: '/api/existing', data: { hello: 'world' } },
   ],
 })
 `,
@@ -1002,8 +1005,9 @@ const server = await mockr({
       }),
     });
 
-    const handle = server.endpoint('/api/obj-resp');
-    expect(handle.body).toEqual({ projects: [{ id: 1 }] });
+    // In v0.3.0, object responses become record-data endpoints — read via `.data`.
+    const handle = server.endpoint('/api/obj-resp') as unknown as { data: unknown };
+    expect(handle.data).toEqual({ projects: [{ id: 1 }] });
   });
 
   it("delete removes endpoint from server file including type", async () => {
@@ -1022,7 +1026,7 @@ type Endpoints = {
 const server = await mockr<Endpoints>({
   port: 0,
   endpoints: [
-    { url: '/api/existing', body: { hello: 'world' } },
+    { url: '/api/existing', data: { hello: 'world' } },
   ],
 })
 `,
@@ -1083,12 +1087,77 @@ const server = await mockr<Endpoints>({
 
   // Unknown routes catch-all
 
+  it("rejects map with empty body entry, writes no files", async () => {
+    await setup();
+    const res = await fetch(`${server.url}/__mockr/map`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        entries: [
+          {
+            url: "http://example.com/api/empty",
+            method: "GET",
+            status: 200,
+            contentType: "application/json",
+            body: "",
+          },
+        ],
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/empty body/i);
+    expect(body.error).toContain("/api/empty");
+
+    // No file written, no endpoint registered
+    await expect(stat(join(mocksDir, "api-empty.json"))).rejects.toThrow();
+    const eps = server.listEndpoints();
+    expect(eps.find((e) => e.url === "/api/empty")).toBeUndefined();
+  });
+
+  it("rejects map with invalid JSON body, no partial state", async () => {
+    await setup();
+    const res = await fetch(`${server.url}/__mockr/map`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        entries: [
+          {
+            url: "http://example.com/api/good",
+            method: "GET",
+            status: 200,
+            contentType: "application/json",
+            body: '{"ok":1}',
+          },
+          {
+            url: "http://example.com/api/bad",
+            method: "GET",
+            status: 200,
+            contentType: "application/json",
+            body: "{not valid json",
+          },
+        ],
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/invalid json/i);
+    expect(body.error).toContain("/api/bad");
+
+    // Atomic: neither endpoint should be created (good entry not partially mapped)
+    await expect(stat(join(mocksDir, "api-good.json"))).rejects.toThrow();
+    await expect(stat(join(mocksDir, "api-bad.json"))).rejects.toThrow();
+    const eps = server.listEndpoints();
+    expect(eps.find((e) => e.url === "/api/good")).toBeUndefined();
+    expect(eps.find((e) => e.url === "/api/bad")).toBeUndefined();
+  });
+
   it("unknown /__mockr routes return 404 not proxy", async () => {
     sessionsDir = await mkdtemp(join(tmpdir(), "mockr-rec-"));
     mocksDir = await mkdtemp(join(tmpdir(), "mockr-mocks-"));
     const target = await mockr({
       port: 0,
-      endpoints: [{ url: "/x", body: "proxy" }],
+      endpoints: [{ url: "/x", handler: handler({ fn: () => ({ body: "proxy" }) }) }],
     });
     server = await mockr({
       port: 0,

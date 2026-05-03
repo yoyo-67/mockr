@@ -69,17 +69,44 @@ function computeTypeImportPath(serverFile: string, typesAbsPath: string): string
 }
 
 /**
- * Adds a bodyFile endpoint to the server file with type import and Endpoints type entry.
+ * Ensure a named runtime import (e.g. `file`, `handler`) exists from the
+ * `mockr` package. Adds the named import to an existing import declaration
+ * if one is found; otherwise creates a new one.
+ */
+function ensureMockrRuntimeImport(src: SourceFile, name: string): void {
+  for (const imp of src.getImportDeclarations()) {
+    const spec = imp.getModuleSpecifierValue();
+    if (spec !== 'mockr' && spec !== '@yoyo-org/mockr') continue;
+    if (imp.isTypeOnly()) continue;
+    const named = imp.getNamedImports().map((n) => n.getName());
+    if (named.includes(name)) return;
+    imp.addNamedImport(name);
+    return;
+  }
+  // No existing runtime import — create one.
+  src.addImportDeclaration({
+    namedImports: [name],
+    moduleSpecifier: 'mockr',
+  });
+}
+
+/**
+ * Adds a dataFile endpoint to the server file with type import and Endpoints
+ * type entry. When `typesFile` is provided, emits `file<TypeName | TypeName[]>(...)`
+ * for typed dataFile (v0.3.0). When `isArray` is true, the Endpoints type entry
+ * uses array form (`TypeName[]`) so the handle is a `ListHandle<TypeName>`.
  */
 export async function addEndpointToServerFile(
   serverFile: string,
-  entry: { url: string; method: string; filePath: string; typesFile?: string },
+  entry: { url: string; method: string; filePath: string; typesFile?: string; isArray?: boolean },
 ): Promise<void> {
   const src = getSourceFile(serverFile);
 
   // Skip if URL already exists
   const fullText = src.getFullText();
   if (fullText.includes(`'${entry.url}'`) || fullText.includes(`"${entry.url}"`)) return;
+
+  let dataFileExpr = `'${entry.filePath}'`;
 
   // 1. Add type import and Endpoints type entry if typesFile is provided
   if (entry.typesFile) {
@@ -98,16 +125,21 @@ export async function addEndpointToServerFile(
     if (endpointsType) {
       endpointsType.addProperty({
         name: `'${entry.url}'`,
-        type: typeName,
+        type: entry.isArray ? `${typeName}[]` : typeName,
       });
     }
+
+    // Use typed file<T>() factory so the dataFile carries its type.
+    const fileGeneric = entry.isArray ? `${typeName}[]` : typeName;
+    dataFileExpr = `file<${fileGeneric}>('${entry.filePath}')`;
+    ensureMockrRuntimeImport(src, 'file');
   }
 
   // 2. Add dataFile entry to endpoints array
   const endpointsArray = findEndpointsArray(src);
   if (endpointsArray) {
     endpointsArray.addElement(
-      `{ url: '${entry.url}', dataFile: '${entry.filePath}' }`,
+      `{ url: '${entry.url}', dataFile: ${dataFileExpr} }`,
     );
   }
 
@@ -201,8 +233,9 @@ export async function changeToHandlerInServerFile(serverFile: string, url: strin
     if (!element.getProperty('handler')) {
       element.addPropertyAssignment({
         name: 'handler',
-        initializer: '(req) => ({ body: {} })',
+        initializer: 'handler({ fn: (req) => ({ body: {} }) })',
       });
+      ensureMockrRuntimeImport(src, 'handler');
     }
     break;
   }

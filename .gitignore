@@ -3,3 +3,5 @@ node_modules
 dist
 playground
 sessions
+docs/site/.vitepress/dist
+docs/site/.vitepress/cache

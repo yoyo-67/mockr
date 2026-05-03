@@ -21839,6 +21839,15 @@ var MockrApi = class {
   async clearMemSession(id) {
     await this.request(`/__mockr/mem-sessions/${id}/clear`, { method: "POST" });
   }
+  async deleteMemSessionEntry(id, key) {
+    await this.request(`/__mockr/mem-sessions/${id}/entries/${encodeURIComponent(key)}`, { method: "DELETE" });
+  }
+  async setSessionCaptureFilter(filter) {
+    await this.request("/__mockr/mem-sessions/filter", {
+      method: "POST",
+      body: JSON.stringify({ filter })
+    });
+  }
 };
 
 // devtools/hooks/useStore.ts
@@ -21931,14 +21940,51 @@ function useStore() {
 
 // devtools/hooks/useRecorder.ts
 var import_react2 = __toESM(require_react(), 1);
-function isXhr(mimeType, url) {
-  const ct = mimeType.toLowerCase();
-  const u = url.toLowerCase();
-  if (ct.includes("image") || u.endsWith(".svg")) return false;
-  return ct.includes("json") || ct.includes("xml") || ct.includes("text/plain") || u.includes("/api/");
+
+// shared/recording-filter.ts
+var FILTER_CATEGORIES = [
+  "json",
+  "xml",
+  "text",
+  "html",
+  "js",
+  "css",
+  "image",
+  "font",
+  "other"
+];
+var DEFAULT_FILTER = {
+  json: true,
+  xml: true,
+  text: true,
+  html: false,
+  js: false,
+  css: false,
+  image: false,
+  font: false,
+  other: false
+};
+function categorize(mimeType, url) {
+  const ct = (mimeType || "").toLowerCase();
+  const u = (url || "").toLowerCase().split(/[?#]/)[0];
+  if (ct.includes("json")) return "json";
+  if (ct.includes("xml")) return "xml";
+  if (ct.startsWith("image/") || /\.(png|jpe?g|gif|webp|svg|ico|bmp|avif)$/.test(u)) return "image";
+  if (ct.startsWith("font/") || ct.includes("font-woff") || /\.(woff2?|ttf|otf|eot)$/.test(u)) return "font";
+  if (ct.includes("javascript") || ct.includes("ecmascript") || /\.m?jsx?$/.test(u)) return "js";
+  if (ct.includes("css") || /\.css$/.test(u)) return "css";
+  if (ct.includes("html")) return "html";
+  if (ct.startsWith("text/")) return "text";
+  return "other";
 }
-function useRecorder(isRecording, entries, addEntry, clearEntries, preserveLogs) {
+
+// devtools/hooks/useRecorder.ts
+function useRecorder(isRecording, entries, addEntry, clearEntries, preserveLogs, enabledCategories) {
   const listenerRef = (0, import_react2.useRef)(null);
+  const enabledRef = (0, import_react2.useRef)(enabledCategories);
+  (0, import_react2.useEffect)(() => {
+    enabledRef.current = enabledCategories;
+  }, [enabledCategories]);
   (0, import_react2.useEffect)(() => {
     if (!isRecording) {
       if (listenerRef.current) {
@@ -21954,7 +22000,8 @@ function useRecorder(isRecording, entries, addEntry, clearEntries, preserveLogs)
       const status = request.response.status;
       const contentType = request.response.content.mimeType || "application/octet-stream";
       const timing = request.time || 0;
-      if (!isXhr(contentType, url)) return;
+      const category = categorize(contentType, url);
+      if (!enabledRef.current[category]) return;
       const responseHeaders = {};
       for (const h of request.response.headers) responseHeaders[h.name.toLowerCase()] = h.value;
       request.getContent((content) => {
@@ -22568,13 +22615,24 @@ function EndpointRow({ ep, api, editorScheme, onToggle, onTypeChange, onDelete, 
 // devtools/components/SessionsTab.tsx
 var import_react5 = __toESM(require_react(), 1);
 var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
-function SessionsTab({ api }) {
+function SessionsTab({ api, recordingFilter, onToggleCategory }) {
   const [sessions, setSessions] = (0, import_react5.useState)([]);
   const [active, setActive] = (0, import_react5.useState)(null);
   const [newName, setNewName] = (0, import_react5.useState)("");
   const [status, setStatus] = (0, import_react5.useState)("");
   const [expandedId, setExpandedId] = (0, import_react5.useState)(null);
   const [entries, setEntries] = (0, import_react5.useState)([]);
+  const [autoReload, setAutoReload] = (0, import_react5.useState)(true);
+  const [selectedKeys, setSelectedKeys] = (0, import_react5.useState)(/* @__PURE__ */ new Set());
+  (0, import_react5.useEffect)(() => {
+    chrome.storage.local.get("mockrSessionAutoReload", (r) => {
+      if (typeof r.mockrSessionAutoReload === "boolean") setAutoReload(r.mockrSessionAutoReload);
+    });
+  }, []);
+  const handleAutoReloadChange = (v) => {
+    setAutoReload(v);
+    chrome.storage.local.set({ mockrSessionAutoReload: v });
+  };
   const load = (0, import_react5.useCallback)(async () => {
     try {
       const res = await api.listMemSessions();
@@ -22596,6 +22654,7 @@ function SessionsTab({ api }) {
     try {
       const detail = await api.getMemSession(id);
       setEntries(detail.entries);
+      setSelectedKeys(new Set(detail.entries.map((e) => e.key)));
     } catch (err) {
       setStatus(`Error: ${err.message}`);
     }
@@ -22613,8 +22672,12 @@ function SessionsTab({ api }) {
   };
   const handleActivate = async (id, mode) => {
     try {
+      await api.setSessionCaptureFilter(recordingFilter).catch(() => {
+      });
       await api.activateMemSession(id, mode);
-      setStatus(`${mode === "record" ? "Recording" : "Replaying"} session`);
+      const reloading = autoReload ? " \u2014 reloading\u2026" : "";
+      setStatus(`${mode === "record" ? "Recording" : "Replaying"} session${reloading}`);
+      if (autoReload) chrome.devtools.inspectedWindow.reload({});
       load();
     } catch (err) {
       setStatus(`Error: ${err.message}`);
@@ -22623,7 +22686,8 @@ function SessionsTab({ api }) {
   const handleDeactivate = async () => {
     try {
       await api.deactivateMemSession();
-      setStatus("Deactivated");
+      setStatus(autoReload ? "Deactivated \u2014 reloading\u2026" : "Deactivated");
+      if (autoReload) chrome.devtools.inspectedWindow.reload({});
       load();
     } catch (err) {
       setStatus(`Error: ${err.message}`);
@@ -22639,6 +22703,50 @@ function SessionsTab({ api }) {
       setStatus(`Error: ${err.message}`);
     }
   };
+  const handleDeleteEntry = async (sessionId, key) => {
+    try {
+      await api.deleteMemSessionEntry(sessionId, key);
+      setSelectedKeys((prev) => {
+        const n = new Set(prev);
+        n.delete(key);
+        return n;
+      });
+      setStatus(`Removed: ${key}`);
+      load();
+      if (expandedId === sessionId) loadEntries(sessionId);
+    } catch (err) {
+      setStatus(`Error: ${err.message}`);
+    }
+  };
+  const handleDeleteSelected = async (sessionId) => {
+    if (selectedKeys.size === 0) return;
+    try {
+      for (const key of selectedKeys) {
+        await api.deleteMemSessionEntry(sessionId, key);
+      }
+      setStatus(`Removed ${selectedKeys.size} entries`);
+      setSelectedKeys(/* @__PURE__ */ new Set());
+      load();
+      if (expandedId === sessionId) loadEntries(sessionId);
+    } catch (err) {
+      setStatus(`Error: ${err.message}`);
+    }
+  };
+  const toggleEntrySelected = (key) => {
+    setSelectedKeys((prev) => {
+      const n = new Set(prev);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
+      return n;
+    });
+  };
+  const filteredEntries = (0, import_react5.useMemo)(() => {
+    return entries.filter((e) => {
+      const path = e.key.split(" ")[1] || "";
+      const cat = categorize(e.contentType, path);
+      return recordingFilter[cat];
+    });
+  }, [entries, recordingFilter]);
   const handleClear = async (id) => {
     try {
       await api.clearMemSession(id);
@@ -22701,7 +22809,32 @@ function SessionsTab({ api }) {
           children: "Refresh"
         }
       ),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { className: "flex items-center gap-1 text-[11px] text-gray-500 cursor-pointer ml-1", title: "Reload inspected page on session state change", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          "input",
+          {
+            type: "checkbox",
+            checked: autoReload,
+            onChange: (e) => handleAutoReloadChange(e.target.checked),
+            className: "cursor-pointer"
+          }
+        ),
+        "Auto-reload page"
+      ] }),
       status && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "text-[10px] text-gray-500 truncate max-w-xs", children: status })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "flex items-center gap-1 px-3 py-1.5 border-b border-gray-100 flex-wrap", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "text-[10px] text-gray-400 mr-1", children: "Capture:" }),
+      FILTER_CATEGORIES.map((c) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "button",
+        {
+          onClick: () => onToggleCategory(c),
+          className: `px-1.5 py-0.5 text-[10px] rounded border cursor-pointer ${recordingFilter[c] ? "bg-purple-700 text-white border-purple-700" : "border-gray-200 text-gray-500 hover:bg-gray-100"}`,
+          children: c
+        },
+        c
+      )),
+      FILTER_CATEGORIES.every((c) => !recordingFilter[c]) && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "text-[10px] text-red-600 ml-2", children: "No types enabled \u2014 capture is off." })
     ] }),
     sessions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "px-3 py-8 text-center text-xs text-gray-400", children: [
       "No sessions yet. Create one, activate it in ",
@@ -22732,19 +22865,19 @@ function SessionsTab({ api }) {
             /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
               "button",
               {
-                onClick: () => handleActivate(s.id, "record"),
-                disabled: isActive && active?.mode === "record",
-                className: `px-2 py-0.5 text-[10px] rounded border ${isActive && active?.mode === "record" ? "border-red-500 bg-red-500 text-white cursor-not-allowed" : "border-red-500 text-red-600 hover:bg-red-500 hover:text-white"}`,
-                children: "\u25CF Record"
+                onClick: () => isActive && active?.mode === "record" ? handleDeactivate() : handleActivate(s.id, "record"),
+                title: isActive && active?.mode === "record" ? "Click to stop recording" : "Activate record mode",
+                className: `px-2 py-0.5 text-[10px] rounded border ${isActive && active?.mode === "record" ? "border-red-500 bg-red-500 text-white hover:bg-red-600" : "border-red-500 text-red-600 hover:bg-red-500 hover:text-white"}`,
+                children: isActive && active?.mode === "record" ? "\u25A0 Stop" : "\u25CF Record"
               }
             ),
             /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
               "button",
               {
-                onClick: () => handleActivate(s.id, "replay"),
-                disabled: isActive && active?.mode === "replay",
-                className: `px-2 py-0.5 text-[10px] rounded border ${isActive && active?.mode === "replay" ? "border-green-600 bg-green-600 text-white cursor-not-allowed" : "border-green-600 text-green-600 hover:bg-green-600 hover:text-white"}`,
-                children: "\u25B6 Replay"
+                onClick: () => isActive && active?.mode === "replay" ? handleDeactivate() : handleActivate(s.id, "replay"),
+                title: isActive && active?.mode === "replay" ? "Click to stop replay" : "Activate replay mode",
+                className: `px-2 py-0.5 text-[10px] rounded border ${isActive && active?.mode === "replay" ? "border-green-600 bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-600 hover:text-white"}`,
+                children: isActive && active?.mode === "replay" ? "\u25A0 Stop" : "\u25B6 Replay"
               }
             ),
             /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
@@ -22766,10 +22899,70 @@ function SessionsTab({ api }) {
             )
           ] }) })
         ] }),
-        isExpanded && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("td", { colSpan: 4, className: "px-3 py-2 bg-gray-50 border-b border-gray-100", children: entries.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "text-[10px] text-gray-400 italic", children: "No cached entries" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "flex flex-col gap-0.5", children: entries.map((e, i) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "flex items-center gap-2 text-[10px] font-mono", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: `px-1 rounded ${e.status >= 200 && e.status < 300 ? "bg-green-100 text-green-700" : e.status >= 400 ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600"}`, children: e.status }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "text-gray-700 truncate", children: e.key })
-        ] }, i)) }) }) })
+        isExpanded && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("tr", { children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("td", { colSpan: 4, className: "px-3 py-2 bg-gray-50 border-b border-gray-100", children: entries.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "text-[10px] text-gray-400 italic", children: "No cached entries" }) : filteredEntries.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "text-[10px] text-gray-400 italic", children: [
+          "All ",
+          entries.length,
+          " entries hidden by capture filter"
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "flex items-center gap-2 mb-1", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+              "input",
+              {
+                type: "checkbox",
+                checked: filteredEntries.length > 0 && filteredEntries.every((e) => selectedKeys.has(e.key)),
+                onChange: () => {
+                  const allSelected = filteredEntries.every((e) => selectedKeys.has(e.key));
+                  setSelectedKeys(allSelected ? /* @__PURE__ */ new Set() : new Set(filteredEntries.map((e) => e.key)));
+                },
+                className: "cursor-pointer",
+                title: filteredEntries.every((e) => selectedKeys.has(e.key)) ? "Deselect all" : "Select all"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "text-[10px] text-gray-500", children: selectedKeys.size > 0 ? `${selectedKeys.size} selected` : `${filteredEntries.length} of ${entries.length} entries` }),
+            selectedKeys.size > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+              "button",
+              {
+                onClick: () => handleDeleteSelected(s.id),
+                className: "ml-auto px-2 py-0.5 text-[10px] rounded border border-red-400 text-red-500 hover:bg-red-500 hover:text-white",
+                children: "Delete selected"
+              }
+            )
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "flex flex-col gap-0.5", children: filteredEntries.map((e, i) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+            "div",
+            {
+              onClick: () => toggleEntrySelected(e.key),
+              className: "group flex items-center gap-2 text-[10px] font-mono hover:bg-gray-100 rounded px-1 cursor-pointer",
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                  "input",
+                  {
+                    type: "checkbox",
+                    checked: selectedKeys.has(e.key),
+                    onChange: () => toggleEntrySelected(e.key),
+                    onClick: (ev) => ev.stopPropagation(),
+                    className: "cursor-pointer"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: `px-1 rounded ${e.status >= 200 && e.status < 300 ? "bg-green-100 text-green-700" : e.status >= 400 ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600"}`, children: e.status }),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "text-gray-700 truncate flex-1", children: e.key }),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                  "button",
+                  {
+                    onClick: (ev) => {
+                      ev.stopPropagation();
+                      handleDeleteEntry(s.id, e.key);
+                    },
+                    title: "Remove this entry",
+                    className: "opacity-0 group-hover:opacity-100 px-1 text-red-500 hover:text-red-700",
+                    children: "\xD7"
+                  }
+                )
+              ]
+            },
+            i
+          )) })
+        ] }) }) })
       ] }, s.id);
     }) }) })
   ] });
@@ -22783,6 +22976,8 @@ function App() {
   const [editorScheme, setEditorScheme] = (0, import_react6.useState)("vscode");
   const [activeTab, setActiveTab] = (0, import_react6.useState)("Recording");
   const [mapLoading, setMapLoading] = (0, import_react6.useState)(false);
+  const [mapToast, setMapToast] = (0, import_react6.useState)(null);
+  const [recordingFilter, setRecordingFilter] = (0, import_react6.useState)(DEFAULT_FILTER);
   const api = (0, import_react6.useMemo)(() => new MockrApi(serverUrl), [serverUrl]);
   const store = useStore();
   const {
@@ -22804,13 +22999,26 @@ function App() {
     selectAll,
     clearSelection
   } = store;
-  useRecorder(isRecording, entries, addEntry, clearEntries, preserveLogs);
+  useRecorder(isRecording, entries, addEntry, clearEntries, preserveLogs, recordingFilter);
   (0, import_react6.useState)(() => {
-    chrome.storage.local.get(["mockrServerUrl", "mockrEditorScheme"], (r) => {
-      if (r.mockrServerUrl) setServerUrl(r.mockrServerUrl);
-      if (r.mockrEditorScheme) setEditorScheme(r.mockrEditorScheme);
-    });
+    chrome.storage.local.get(
+      ["mockrServerUrl", "mockrEditorScheme", "mockrRecordingFilter"],
+      (r) => {
+        if (r.mockrServerUrl) setServerUrl(r.mockrServerUrl);
+        if (r.mockrEditorScheme) setEditorScheme(r.mockrEditorScheme);
+        if (r.mockrRecordingFilter) setRecordingFilter({ ...DEFAULT_FILTER, ...r.mockrRecordingFilter });
+      }
+    );
   });
+  const handleToggleCategory = (0, import_react6.useCallback)((cat) => {
+    setRecordingFilter((prev) => {
+      const next = { ...prev, [cat]: !prev[cat] };
+      chrome.storage.local.set({ mockrRecordingFilter: next });
+      api.setSessionCaptureFilter(next).catch(() => {
+      });
+      return next;
+    });
+  }, [api]);
   const handleServerUrlChange = (0, import_react6.useCallback)((url) => {
     setServerUrl(url);
     chrome.storage.local.set({ mockrServerUrl: url });
@@ -22829,9 +23037,17 @@ function App() {
   const handleMap = (0, import_react6.useCallback)(async () => {
     if (selectedIds.size === 0) return;
     setMapLoading(true);
+    setMapToast(null);
     try {
       const selected = entries.filter((e) => selectedIds.has(e.id));
-      await api.mapEntries(selected.map((e) => ({
+      const withBody = selected.filter((e) => e.body && e.body.length > 0);
+      const skipped = selected.length - withBody.length;
+      if (withBody.length === 0) {
+        setMapToast({ kind: "err", text: `No mappable entries \u2014 ${skipped} skipped (empty body).` });
+        setMapLoading(false);
+        return;
+      }
+      const result = await api.mapEntries(withBody.map((e) => ({
         url: e.url,
         method: e.method,
         status: e.status,
@@ -22840,8 +23056,11 @@ function App() {
       })));
       clearSelection();
       setActiveTab("Mocked");
+      const mappedCount = result.mapped?.length ?? withBody.length;
+      const skipNote = skipped > 0 ? ` (${skipped} skipped \u2014 empty body)` : "";
+      setMapToast({ kind: "ok", text: `Mapped ${mappedCount} endpoint${mappedCount === 1 ? "" : "s"}${skipNote}` });
     } catch (err) {
-      console.error("[mockr] Map error:", err);
+      setMapToast({ kind: "err", text: err.message || "Map failed" });
     }
     setMapLoading(false);
   }, [selectedIds, entries, api, clearSelection]);
@@ -22872,6 +23091,23 @@ function App() {
         mapLoading
       }
     ),
+    mapToast && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+      "div",
+      {
+        className: `flex items-center gap-2 px-3 py-1.5 text-xs border-b ${mapToast.kind === "ok" ? "bg-green-50 text-green-800 border-green-200" : "bg-red-50 text-red-800 border-red-200"}`,
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "flex-1 break-all", children: mapToast.text }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+            "button",
+            {
+              onClick: () => setMapToast(null),
+              className: "text-[10px] px-1.5 py-0.5 rounded border border-current opacity-60 hover:opacity-100",
+              children: "Dismiss"
+            }
+          )
+        ]
+      }
+    ),
     /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "flex border-b border-gray-200", children: TABS.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
       "button",
       {
@@ -22898,7 +23134,14 @@ function App() {
       }
     ),
     activeTab === "Mocked" && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(MockedTab, { api, editorScheme }),
-    activeTab === "Sessions" && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(SessionsTab, { api })
+    activeTab === "Sessions" && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+      SessionsTab,
+      {
+        api,
+        recordingFilter,
+        onToggleCategory: handleToggleCategory
+      }
+    )
   ] });
 }
 

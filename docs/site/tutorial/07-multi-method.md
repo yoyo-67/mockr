@@ -1,0 +1,62 @@
+# 07 — Multi-method
+
+Many HTTP verbs on the same URL — group them in a `methods` map instead of repeating the URL across array entries.
+
+[Open in StackBlitz →](https://stackblitz.com/github/yoyo-67/mockr/tree/experiments/examples/07-multi-method?file=server.ts)
+
+## Concept
+
+`methods` maps verb → handler. Verbs not in the map respond `405 Method Not Allowed` with an `Allow` header listing the supported verbs. The map can stand alone (no data fallback) or sit alongside `data`/`dataFile` to override specific verbs while default CRUD covers the rest.
+
+## Code
+
+```ts
+import { mockr, handler } from '@yoyo-org/mockr';
+import { z } from 'zod';
+
+interface CartItem { id: number; product_id: number; quantity: number }
+
+type Endpoints = { '/internal/cart': CartItem[] };
+
+await mockr<Endpoints>({
+  port: 3007,
+  endpoints: [
+    { url: '/internal/cart', data: [] },
+
+    {
+      url: '/api/cart',
+      methods: {
+        GET: handler({
+          fn: (_req, ctx) => ({ body: ctx.endpoint('/internal/cart').data }),
+        }),
+        POST: handler({
+          body: z.object({ product_id: z.number(), quantity: z.number() }),
+          fn: (req, ctx) => {
+            const item = ctx.endpoint('/internal/cart').insert(req.body as CartItem);
+            return { status: 201, body: { item } };
+          },
+        }),
+        DELETE: handler({
+          fn: (_req, ctx) => {
+            ctx.endpoint('/internal/cart').clear();
+            return { status: 204, body: '' };
+          },
+        }),
+      },
+    },
+  ],
+});
+```
+
+## Try it
+
+```http
+GET    http://localhost:3007/api/cart
+POST   http://localhost:3007/api/cart    { "product_id": 1, "quantity": 2 }
+DELETE http://localhost:3007/api/cart
+PUT    http://localhost:3007/api/cart                              # 405, Allow: GET, POST, DELETE
+```
+
+## What's next
+
+Forward unmatched routes to a real backend → [08 — Proxy](./08-proxy).

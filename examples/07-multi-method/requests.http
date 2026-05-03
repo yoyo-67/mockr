@@ -1,0 +1,17 @@
+### List
+GET http://localhost:3007/api/cart
+
+### Add
+POST http://localhost:3007/api/cart
+Content-Type: application/json
+
+{ "product_id": 1, "quantity": 2 }
+
+### Clear
+DELETE http://localhost:3007/api/cart
+
+### Verb not in map → 405 with Allow header.
+PUT http://localhost:3007/api/cart
+Content-Type: application/json
+
+{ "anything": true }

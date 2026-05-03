@@ -1,5 +1,22 @@
 import { randomUUID } from 'node:crypto';
 
+export type FilterCategory = 'json' | 'xml' | 'text' | 'html' | 'js' | 'css' | 'image' | 'font' | 'other';
+
+export function categorize(mimeType: string, urlPath: string): FilterCategory {
+  const ct = (mimeType || '').toLowerCase();
+  const u = (urlPath || '').toLowerCase().split(/[?#]/)[0];
+
+  if (ct.includes('json')) return 'json';
+  if (ct.includes('xml')) return 'xml';
+  if (ct.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|ico|bmp|avif)$/.test(u)) return 'image';
+  if (ct.startsWith('font/') || ct.includes('font-woff') || /\.(woff2?|ttf|otf|eot)$/.test(u)) return 'font';
+  if (ct.includes('javascript') || ct.includes('ecmascript') || /\.m?jsx?$/.test(u)) return 'js';
+  if (ct.includes('css') || /\.css$/.test(u)) return 'css';
+  if (ct.includes('html')) return 'html';
+  if (ct.startsWith('text/')) return 'text';
+  return 'other';
+}
+
 export interface CachedResponse {
   status: number;
   headers: Record<string, string | string[]>;
@@ -42,6 +59,9 @@ export interface MemorySessionStore {
   recordResponse(req: CacheLookupInput, response: CachedResponse): void;
   lookupResponse(req: CacheLookupInput): CachedResponse | undefined;
   clear(id: string): void;
+  deleteEntry(id: string, key: string): boolean;
+  setCaptureFilter(filter: Record<FilterCategory, boolean> | null): void;
+  getCaptureFilter(): Record<FilterCategory, boolean> | null;
   info(session: MemorySession): SessionInfo;
 }
 
@@ -71,6 +91,7 @@ export function createMemorySessionStore(): MemorySessionStore {
   const sessions: MemorySession[] = [];
   const byId = new Map<string, MemorySession>();
   let active: { session: MemorySession; mode: 'record' | 'replay' } | null = null;
+  let captureFilter: Record<FilterCategory, boolean> | null = null;
 
   function create(name: string): MemorySession {
     const session: MemorySession = {
@@ -119,6 +140,10 @@ export function createMemorySessionStore(): MemorySessionStore {
   function recordResponse(req: CacheLookupInput, response: CachedResponse): void {
     if (!active || active.mode !== 'record') return;
     if (!CACHEABLE_METHODS.has(req.method.toUpperCase())) return;
+    if (captureFilter) {
+      const cat = categorize(response.contentType, req.path);
+      if (!captureFilter[cat]) return;
+    }
     const key = cacheKey(req);
     active.session.entries.set(key, { ...response, recordedAt: Date.now() });
   }
@@ -132,6 +157,20 @@ export function createMemorySessionStore(): MemorySessionStore {
   function clear(id: string): void {
     const s = byId.get(id);
     if (s) s.entries.clear();
+  }
+
+  function deleteEntry(id: string, key: string): boolean {
+    const s = byId.get(id);
+    if (!s) return false;
+    return s.entries.delete(key);
+  }
+
+  function setCaptureFilter(filter: Record<FilterCategory, boolean> | null): void {
+    captureFilter = filter;
+  }
+
+  function getCaptureFilter(): Record<FilterCategory, boolean> | null {
+    return captureFilter;
   }
 
   function info(session: MemorySession): SessionInfo {
@@ -148,6 +187,9 @@ export function createMemorySessionStore(): MemorySessionStore {
     recordResponse,
     lookupResponse,
     clear,
+    deleteEntry,
+    setCaptureFilter,
+    getCaptureFilter,
     info,
   };
 }

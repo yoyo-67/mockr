@@ -1,3 +1,9 @@
+import type { HandlerSpec } from './handler.js';
+import type { FileRef } from './file.js';
+import type { EndpointHandle } from './endpoint-handle.js';
+
+export type { EndpointHandle } from './endpoint-handle.js';
+
 /** Minimal schema interface compatible with Zod's .safeParse() */
 export interface ParseableSchema<T = unknown> {
   safeParse(data: unknown):
@@ -21,54 +27,30 @@ export type HandlerResult =
   | { status: number; body: unknown; headers?: Record<string, string | string[]> }
   | { raw: true; body: string | Buffer; status: number; headers: Record<string, string | string[]> };
 
-export interface HandlerContext<TEndpoints = Record<string, unknown>> {
-  endpoints: [keyof TEndpoints] extends [never]
-    ? (url: string) => EndpointHandle
-    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K]>;
+export interface ForwardPatch {
+  path?: string;
+  method?: string;
+  headers?: Record<string, string | string[] | undefined>;
+  body?: unknown;
 }
 
-/** Element type: unwraps T[] to T, keeps non-arrays as-is */
-type ElementOf<T> = T extends (infer U)[] ? U : T;
-
-export interface EndpointHandle<T = Record<string, unknown>> {
-  data: T;
-  findById(id: string | number): ElementOf<T> | undefined;
-  where(filter: Partial<ElementOf<T>>): ElementOf<T>[];
-  where(predicate: (item: ElementOf<T>) => boolean): ElementOf<T>[];
-  first(): ElementOf<T> | undefined;
-  count(): number;
-  has(id: string | number): boolean;
-  insert(item: ElementOf<T>): ElementOf<T>;
-  nextId(): number;
-  update(id: string | number, patch: Partial<ElementOf<T>>): ElementOf<T> | undefined;
-  updateMany(ids: (string | number)[], patch: Partial<ElementOf<T>> | ((item: ElementOf<T>) => Partial<ElementOf<T>>)): ElementOf<T>[];
-  patch(id: string | number, fields: Partial<ElementOf<T>>, defaults?: Partial<ElementOf<T>>): ElementOf<T> | undefined;
-  remove(id: string | number): boolean;
-  clear(): void;
-  reset(): void;
-  save(path: string): Promise<void>;
+export type ForwardResult<T = unknown> = {
+  status: number;
   body: T;
-  response: { status: number; headers: Record<string, string>; body: unknown };
-  handler: ((req: MockrRequest, ctx: HandlerContext<any>) => HandlerResult | Promise<HandlerResult>) | null;
-}
+  headers: Record<string, string | string[]>;
+  raw?: boolean;
+};
 
-export interface ValidatedHandler<
-  TBody extends ParseableSchema | undefined = undefined,
-  TQuery extends ParseableSchema | undefined = undefined,
-  TParams extends ParseableSchema | undefined = undefined,
-  TEndpoints = Record<string, unknown>,
-> {
-  body?: TBody;
-  query?: TQuery;
-  params?: TParams;
-  fn: (
-    req: MockrRequest<{
-      body: TBody extends ParseableSchema<infer B> ? B : unknown;
-      params: TParams extends ParseableSchema<infer P extends Record<string, string>> ? P : Record<string, string>;
-      query: TQuery extends ParseableSchema<infer Q extends Record<string, unknown>> ? Q : Record<string, string | string[]>;
-    }>,
-    ctx: HandlerContext<TEndpoints>,
-  ) => HandlerResult | Promise<HandlerResult>;
+type CurrentEndpointBody<TEndpoints, K extends keyof TEndpoints> =
+  TEndpoints[K] extends readonly (infer U)[] ? U[] : TEndpoints[K];
+
+export interface HandlerContext<TEndpoints = Record<string, unknown>, TCurrentUrl extends keyof TEndpoints | undefined = undefined> {
+  endpoint: [keyof TEndpoints] extends [never]
+    ? (url: string) => EndpointHandle<unknown[]>
+    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : unknown>;
+  forward: TCurrentUrl extends keyof TEndpoints
+    ? <T = CurrentEndpointBody<TEndpoints, TCurrentUrl>>(patch?: ForwardPatch) => Promise<ForwardResult<T>>
+    : <T = unknown>(patch?: ForwardPatch) => Promise<ForwardResult<T>>;
 }
 
 export interface Middleware {
@@ -77,27 +59,110 @@ export interface Middleware {
   post?: (req: MockrRequest, res: HandlerResult) => void | HandlerResult | Promise<void | HandlerResult>;
 }
 
+/**
+ * Map of uppercase HTTP verbs to handler specs. Used as an overlay on `data` /
+ * `dataFile` endpoints (overrides specific verbs while default CRUD covers the
+ * rest) or stand-alone (no data store, all verbs explicit).
+ */
+export type HttpVerb = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS' | 'HEAD';
+
+/**
+ * `MethodMap` values use `HandlerSpec<any, any, any, any>` (TEndpoints = any)
+ * so groups composed via intersection (`endpoints<A>` + `endpoints<B>` into
+ * `mockr<A & B>`) typecheck without a bivariance hack on each verb slot.
+ *
+ * Trade-off: `ctx.endpoint(url)` inside a method-map handler is typed against
+ * `Record<string, unknown>` by default. Users wanting precise typing can pass
+ * an explicit generic to `handler<E>({ fn: (req, ctx) => ... })`.
+ */
+export type MethodMap<_TEndpoints = unknown> = Partial<
+  Record<HttpVerb, HandlerSpec<any, any, any, any>>
+>;
+
 export type EndpointDef<TEndpoints = Record<string, unknown>> =
-  | { url: string | RegExp; body: unknown; method?: string; response?: never; data?: never; dataFile?: never; handler?: never }
-  | { url: string | RegExp; response: { status: number; headers?: Record<string, string>; body: unknown }; method?: string; body?: never; data?: never; dataFile?: never; handler?: never }
-  | { url: string | RegExp; data: unknown[]; idKey?: string; method?: string; body?: never; response?: never; dataFile?: never; handler?: never }
-  | { url: string | RegExp; dataFile: string; idKey?: string; method?: string; body?: never; response?: never; data?: never; handler?: never }
   | {
       url: string | RegExp;
-      handler:
-        | ((req: MockrRequest, ctx: HandlerContext<TEndpoints>) => HandlerResult | Promise<HandlerResult>)
-        | ValidatedHandler<any, any, any, TEndpoints>;
       method?: string;
+      data: unknown;
+      idKey?: string;
+      methods?: MethodMap<TEndpoints>;
+      dataFile?: never;
+      handler?: never;
       body?: never;
       response?: never;
+    }
+  | {
+      url: string | RegExp;
+      method?: string;
+      dataFile: FileRef<unknown> | string;
+      idKey?: string;
+      methods?: MethodMap<TEndpoints>;
+      data?: never;
+      handler?: never;
+      body?: never;
+      response?: never;
+    }
+  | {
+      url: string | RegExp;
+      method?: string;
+      // `BivariantHandler` makes `TEndpoints` bivariant in the function-arg
+      // position so groups composed via intersection (`endpoints<A>` +
+      // `endpoints<B>` into `mockr<A & B>`) typecheck. Without this hack,
+      // strict variance rejects the assignment because `HandlerContext<T>`
+      // varies contravariantly in `T`.
+      handler:
+        | BivariantHandler<TEndpoints>
+        | HandlerSpec<any, any, any, TEndpoints>;
       data?: never;
       dataFile?: never;
+      body?: never;
+      response?: never;
+      methods?: never;
+    }
+  | {
+      url: string | RegExp;
+      methods: MethodMap<TEndpoints>;
+      method?: never;
+      data?: never;
+      dataFile?: never;
+      handler?: never;
+      body?: never;
+      response?: never;
+      idKey?: never;
     };
+
+/**
+ * Bivariance hack: by stuffing the function signature into a method slot,
+ * TS uses bivariant param checking even under `strictFunctionTypes`. This
+ * lets handlers declared against a group's `T` slot into a wider `T'` at the
+ * `mockr<T'>` call site.
+ */
+export type BivariantHandler<TEndpoints> = {
+  bivarianceHack(
+    req: MockrRequest,
+    ctx: HandlerContext<TEndpoints>,
+  ): HandlerResult | Promise<HandlerResult>;
+}['bivarianceHack'];
+
+/**
+ * Mutable handle adapter passed to scenario callbacks. Exposes the same shape
+ * as `EndpointHandle<T>` plus a writable `handler` slot — letting scenarios
+ * override an endpoint's handler without redeclaring the endpoint.
+ *
+ * @deprecated The `handler` slot is a transitional escape hatch kept for
+ * v0.3.0 scenario migration. Issue 009 replaces this with declarative
+ * scenario patches.
+ */
+export type ScenarioEndpointHandle<T> = EndpointHandle<T> & {
+  handler:
+    | ((req: MockrRequest, ctx: HandlerContext<any>) => HandlerResult | Promise<HandlerResult>)
+    | null;
+};
 
 export interface ScenarioSetup<TEndpoints = Record<string, unknown>> {
   endpoint: [keyof TEndpoints] extends [never]
-    ? (url: string) => EndpointHandle
-    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K]>;
+    ? (url: string) => ScenarioEndpointHandle<unknown[]>
+    : <K extends keyof TEndpoints>(url: K) => ScenarioEndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : unknown>;
 }
 
 export interface MockrConfig<TEndpoints = Record<string, unknown>> {
@@ -123,8 +188,8 @@ export interface MockrServer<TEndpoints = Record<string, unknown>> {
   url: string;
   port: number;
   endpoint: [keyof TEndpoints] extends [never]
-    ? (url: string) => EndpointHandle
-    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K]>;
+    ? (url: string) => EndpointHandle<unknown[]>
+    : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : unknown>;
   use(middleware: Middleware): void;
   scenario(name: string): Promise<void>;
   reset(): Promise<void>;

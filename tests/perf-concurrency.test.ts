@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mockr } from '../src/index.js';
+import { mockr, handler } from '../src/index.js';
 
 type Server = Awaited<ReturnType<typeof mockr>>;
 
@@ -24,10 +24,10 @@ describe('Server concurrency', () => {
       endpoints: [
         {
           url: '/slow',
-          handler: async () => {
+          handler: handler({ fn: async () => {
             await new Promise((r) => setTimeout(r, 100));
             return { body: { ok: true } };
-          },
+          } }),
         },
       ],
     });
@@ -49,10 +49,10 @@ describe('Server concurrency', () => {
       endpoints: [
         {
           url: '/api/data',
-          handler: () => {
+          handler: handler({ fn: () => {
             backendCalls++;
             return { body: { v: 1 } };
-          },
+          } }),
         },
       ],
     });
@@ -83,10 +83,10 @@ describe('Server concurrency', () => {
       endpoints: [
         {
           url: '/slow',
-          handler: async () => {
+          handler: handler({ fn: async () => {
             await new Promise((r) => setTimeout(r, 100));
             return { body: { ok: true } };
-          },
+          } }),
         },
       ],
     });

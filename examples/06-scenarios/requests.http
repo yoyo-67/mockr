@@ -1,0 +1,29 @@
+### Default state (2 users).
+GET http://localhost:3006/api/users
+
+### Switch to "empty".
+POST http://localhost:3006/__mockr/scenario
+Content-Type: application/json
+
+{ "name": "empty" }
+
+### Now empty.
+GET http://localhost:3006/api/users
+
+### Switch to "crowded".
+POST http://localhost:3006/__mockr/scenario
+Content-Type: application/json
+
+{ "name": "crowded" }
+
+### 12 users (2 baseline + 10 inserted).
+GET http://localhost:3006/api/users
+
+### Switch to "down" — every read returns 503.
+POST http://localhost:3006/__mockr/scenario
+Content-Type: application/json
+
+{ "name": "down" }
+
+### Now broken.
+GET http://localhost:3006/api/users

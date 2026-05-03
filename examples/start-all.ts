@@ -3,7 +3,18 @@
 
 export {};
 
-const examples = ['todo', 'ecommerce', 'auth-api', 'chat', 'batch-monitor', 'proxy'];
+const examples = [
+  '01-data-list',
+  '02-data-files',
+  '03-cross-endpoint',
+  '04-handlers-zod',
+  '05-middleware',
+  '06-scenarios',
+  '07-multi-method',
+  '08-proxy',
+  '09-forward',
+  '10-everything',
+];
 
 console.log('Starting all example servers...\n');
 

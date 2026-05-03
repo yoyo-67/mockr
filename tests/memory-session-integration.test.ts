@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mockr } from '../src/index.js';
+import { mockr, handler } from '../src/index.js';
 
 type Server = Awaited<ReturnType<typeof mockr>>;
 
@@ -25,10 +25,10 @@ describe('Memory-session replay (integration)', () => {
       endpoints: [
         {
           url: '/api/users',
-          handler: () => {
+          handler: handler({ fn: () => {
             backendCalls++;
             return { body: [{ id: 1, name: 'Alice' }] };
-          },
+          } }),
         },
       ],
     });
@@ -53,10 +53,10 @@ describe('Memory-session replay (integration)', () => {
       endpoints: [
         {
           url: '/api/users',
-          handler: () => {
+          handler: handler({ fn: () => {
             backendCalls++;
             return { body: [{ id: 1 }] };
-          },
+          } }),
         },
       ],
     });
@@ -78,8 +78,8 @@ describe('Memory-session replay (integration)', () => {
     let backendCalls = 0;
     const backend = await spawn({
       endpoints: [
-        { url: '/api/users', handler: () => { backendCalls++; return { body: [] }; } },
-        { url: '/api/orders', handler: () => { backendCalls++; return { body: { total: 7 } }; } },
+        { url: '/api/users', handler: handler({ fn: () => { backendCalls++; return { body: [] }; } }) },
+        { url: '/api/orders', handler: handler({ fn: () => { backendCalls++; return { body: { total: 7 } }; } }) },
       ],
     });
 
@@ -99,7 +99,7 @@ describe('Memory-session replay (integration)', () => {
 
   it('replay mode serves cached responses after backend goes down', async () => {
     const backend = await spawn({
-      endpoints: [{ url: '/api/data', body: { value: 42 } }],
+      endpoints: [{ url: '/api/data', data: { value: 42 } }],
     });
 
     const server = await spawn({ proxy: { target: backend.url } });
@@ -124,10 +124,10 @@ describe('Memory-session replay (integration)', () => {
       endpoints: [
         {
           url: '/api/search',
-          handler: () => {
+          handler: handler({ fn: () => {
             backendCalls++;
             return { body: { results: ['x'] } };
-          },
+          } }),
         },
       ],
     });
@@ -152,7 +152,7 @@ describe('Memory-session replay (integration)', () => {
       endpoints: [
         {
           url: '/api/data',
-          handler: () => { backendCalls++; return { body: { n: backendCalls } }; },
+          handler: handler({ fn: () => { backendCalls++; return { body: { n: backendCalls } }; } }),
         },
       ],
     });
@@ -176,7 +176,7 @@ describe('Memory-session replay (integration)', () => {
       endpoints: [
         {
           url: '/api/data',
-          handler: () => { backendCalls++; return { body: { from: 'backend' } }; },
+          handler: handler({ fn: () => { backendCalls++; return { body: { from: 'backend' } }; } }),
         },
       ],
     });
@@ -189,7 +189,7 @@ describe('Memory-session replay (integration)', () => {
 
     // Second server defines /api/data as a static endpoint; session replay must not override it
     const server = await spawn({
-      endpoints: [{ url: '/api/data', body: { from: 'mock' } }],
+      endpoints: [{ url: '/api/data', data: { from: 'mock' } }],
       proxy: { target: backend.url },
     });
     const s2 = server.sessions.create('x');
@@ -206,7 +206,7 @@ describe('Memory-session replay (integration)', () => {
     let backendCalls = 0;
     const backend = await spawn({
       endpoints: [
-        { url: '/api/users', handler: () => { backendCalls++; return { body: [{ id: 1 }] }; } },
+        { url: '/api/users', handler: handler({ fn: () => { backendCalls++; return { body: [{ id: 1 }] }; } }) },
       ],
     });
 

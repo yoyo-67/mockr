@@ -77,16 +77,16 @@ describe('Type inference', () => {
     expectTypeOf(config.body).toEqualTypeOf<Config>();
   });
 
-  it('handler context endpoints are typed', () => {
+  it('handler context endpoint is typed', () => {
     const handler = (
       _req: MockrRequest,
-      { endpoints }: { endpoints: <K extends keyof MyEndpoints>(url: K) => EndpointHandle<MyEndpoints[K]> },
+      { endpoint }: { endpoint: <K extends keyof MyEndpoints>(url: K) => EndpointHandle<MyEndpoints[K]> },
     ) => {
-      const items = endpoints('/api/items');
+      const items = endpoint('/api/items');
       expectTypeOf(items.data).toEqualTypeOf<Item[]>();
       expectTypeOf(items.findById(1)).toEqualTypeOf<Item | undefined>();
 
-      const config = endpoints('/api/config');
+      const config = endpoint('/api/config');
       expectTypeOf(config.body).toEqualTypeOf<Config>();
 
       return { body: { count: items.count() } };
@@ -360,14 +360,14 @@ describe('Mapped endpoint type inference', () => {
     expectTypeOf(handle.data).toEqualTypeOf<{ projects: Project[] }>();
   });
 
-  it('handler context endpoints are typed from Endpoints generic', async () => {
+  it('handler context endpoint is typed from Endpoints generic', async () => {
     const server = await mockr<AppEndpoints>({
       endpoints: [
         { url: '/api/items', data: [] },
         {
           url: '/api/projects',
           handler: (_req, ctx) => {
-            const items = ctx.endpoints('/api/items');
+            const items = ctx.endpoint('/api/items');
             expectTypeOf(items.data).toEqualTypeOf<{ id: number; name: string }[]>();
             expectTypeOf(items.findById(1)).toEqualTypeOf<{ id: number; name: string } | undefined>();
             return { body: { count: items.count() } };

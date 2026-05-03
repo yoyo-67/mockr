@@ -144,6 +144,17 @@ export class MockrApi {
   async clearMemSession(id: string): Promise<void> {
     await this.request(`/__mockr/mem-sessions/${id}/clear`, { method: 'POST' });
   }
+
+  async deleteMemSessionEntry(id: string, key: string): Promise<void> {
+    await this.request(`/__mockr/mem-sessions/${id}/entries/${encodeURIComponent(key)}`, { method: 'DELETE' });
+  }
+
+  async setSessionCaptureFilter(filter: Record<string, boolean> | null): Promise<void> {
+    await this.request('/__mockr/mem-sessions/filter', {
+      method: 'POST',
+      body: JSON.stringify({ filter }),
+    });
+  }
 }
 
 export interface MemSessionInfo {

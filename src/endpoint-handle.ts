@@ -1,143 +1,50 @@
-import { writeFile } from 'node:fs/promises';
-import type { MockrRequest, EndpointHandle, HandlerContext, HandlerResult } from './types.js';
+import { createListHandle, type ListHandle, type ListHandleOptions } from './list-handle.js';
+import { createRecordHandle, type RecordHandle } from './record-handle.js';
 
-export function createEndpointHandle(initialData: unknown[], url: string, idKey: string = 'id'): EndpointHandle<unknown> {
-  const initial = structuredClone(initialData);
-  let data = structuredClone(initialData) as Record<string, unknown>[];
-  let staticBody: unknown = undefined;
-  let staticResponse: { status: number; headers: Record<string, string>; body: unknown } = {
-    status: 200,
-    headers: {},
-    body: undefined,
-  };
-  let handlerFn: ((req: MockrRequest, ctx: HandlerContext<any>) => HandlerResult | Promise<HandlerResult>) | null = null;
+/**
+ * Superset of every shape `EndpointHandle` can produce. Used as the fallback
+ * when the caller does not pass an `Endpoints` generic and `T` collapses to
+ * `unknown`. The intersection makes both list and record method surfaces
+ * structurally accessible so untyped consumers can still call `.data`,
+ * `.findById`, `.count`, `.set`, etc. without narrowing.
+ */
+export type AnyEndpointHandle = ListHandle<unknown> & RecordHandle<Record<string, unknown>>;
 
-  function nextId(): number {
-    if (data.length === 0) return 1;
-    const ids = data.map((item) => {
-      const val = item[idKey];
-      return typeof val === 'number' ? val : typeof val === 'string' ? parseInt(val, 10) || 0 : 0;
-    });
-    return Math.max(...ids) + 1;
+/**
+ * Conditional handle type. Picks `ListHandle` when `T` is an array, and
+ * `RecordHandle` when `T` is a non-array object. Anything else is `never`.
+ *
+ * The `unknown extends T` check (with `unknown` on the LEFT) only matches
+ * when `T` is exactly `unknown`, so untyped callers fall back to the union
+ * `AnyEndpointHandle`. Typed callers (`Foo[]`, `{ x: 1 }`) bypass the check
+ * and reach the precise narrowed branches below.
+ */
+export type EndpointHandle<T = unknown> =
+  unknown extends T
+    ? AnyEndpointHandle
+    : T extends readonly (infer U)[]
+      ? ListHandle<U>
+      : T extends object
+        ? RecordHandle<T>
+        : never;
+
+/** Options accepted by `createEndpointHandle`. */
+export type EndpointHandleOptions = ListHandleOptions;
+
+/**
+ * Build the right kind of handle for `initial`:
+ * - arrays return a `ListHandle<U>` (CRUD over records),
+ * - objects return a `RecordHandle<T>` (set/replace/reset).
+ *
+ * The runtime check uses `Array.isArray`. The return type is the conditional
+ * `EndpointHandle<T>`.
+ */
+export function createEndpointHandle<T extends readonly unknown[] | object>(
+  initial: T,
+  opts: EndpointHandleOptions = {},
+): EndpointHandle<T> {
+  if (Array.isArray(initial)) {
+    return createListHandle(initial, opts) as EndpointHandle<T>;
   }
-
-  const handle: EndpointHandle<unknown> = {
-    get data() {
-      return data;
-    },
-    set data(value: Record<string, unknown>[]) {
-      data = value;
-    },
-
-    findById(id: string | number) {
-      return data.find((item) => item[idKey] == id);
-    },
-
-    where(filterOrPredicate: Partial<Record<string, unknown>> | ((item: Record<string, unknown>) => boolean)): Record<string, unknown>[] {
-      if (typeof filterOrPredicate === 'function') {
-        return data.filter(filterOrPredicate);
-      }
-      const filter = filterOrPredicate;
-      return data.filter((item) =>
-        Object.entries(filter).every(([key, val]) => item[key] === val)
-      );
-    },
-
-    first() {
-      return data[0];
-    },
-
-    count() {
-      return data.length;
-    },
-
-    has(id: string | number) {
-      return data.some((item) => item[idKey] == id);
-    },
-
-    nextId,
-
-    insert(item: Record<string, unknown>) {
-      const newItem = { ...item };
-      data.push(newItem);
-      return newItem;
-    },
-
-    update(id: string | number, patch: Partial<Record<string, unknown>>) {
-      const item = data.find((i) => i[idKey] == id);
-      if (!item) return undefined;
-      Object.assign(item, patch);
-      return item;
-    },
-
-    updateMany(ids: (string | number)[], patch: Partial<Record<string, unknown>> | ((item: Record<string, unknown>) => Partial<Record<string, unknown>>)) {
-      const results: Record<string, unknown>[] = [];
-      for (const id of ids) {
-        const item = data.find((i) => i[idKey] == id);
-        if (!item) continue;
-        const p = typeof patch === 'function' ? patch(item) : patch;
-        Object.assign(item, p);
-        results.push(item);
-      }
-      return results;
-    },
-
-    patch(id: string | number, fields: Partial<Record<string, unknown>>, defaults?: Partial<Record<string, unknown>>) {
-      const item = data.find((i) => i[idKey] == id);
-      if (!item) return undefined;
-      // Only apply fields that are not undefined
-      for (const [key, val] of Object.entries(fields)) {
-        if (val !== undefined) {
-          item[key] = val;
-        }
-      }
-      // Apply defaults unconditionally
-      if (defaults) {
-        Object.assign(item, defaults);
-      }
-      return item;
-    },
-
-    remove(id: string | number) {
-      const idx = data.findIndex((i) => i[idKey] == id);
-      if (idx === -1) return false;
-      data.splice(idx, 1);
-      return true;
-    },
-
-    clear() {
-      data.length = 0;
-    },
-
-    reset() {
-      data = structuredClone(initial) as Record<string, unknown>[];
-    },
-
-    async save(path: string) {
-      await writeFile(path, JSON.stringify(data, null, 2), 'utf-8');
-    },
-
-    get body() {
-      return staticBody;
-    },
-    set body(value: unknown) {
-      staticBody = value;
-    },
-
-    get response() {
-      return staticResponse;
-    },
-    set response(value: { status: number; headers: Record<string, string>; body: unknown }) {
-      staticResponse = value;
-    },
-
-    get handler() {
-      return handlerFn;
-    },
-    set handler(value: ((req: MockrRequest, ctx: HandlerContext<any>) => HandlerResult | Promise<HandlerResult>) | null) {
-      handlerFn = value;
-    },
-  };
-
-  return handle;
+  return createRecordHandle(initial as object) as EndpointHandle<T>;
 }

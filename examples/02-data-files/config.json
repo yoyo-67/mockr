@@ -1,0 +1,5 @@
+{
+  "feature_dark_mode": true,
+  "max_upload_mb": 25,
+  "supported_locales": ["en", "fr", "es"]
+}

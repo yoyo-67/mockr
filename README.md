@@ -18,13 +18,26 @@ npx tsx mock.ts
 
 No `tsconfig.json` or build step needed — `tsx` runs TypeScript directly.
 
+For dev work, use `tsx watch` so a save to your server file or any imported mock group respawns the process automatically:
+
+```jsonc
+// package.json
+{
+  "scripts": {
+    "dev": "tsx watch src/server.ts"
+  }
+}
+```
+
+`tsx watch` handles TS source changes (kill + respawn, ~100ms). JSON `dataFile` changes are handled in-process by mockr (debounced 100ms, no respawn) — don't add `--include 'src/**/*.json'`, it makes tsx restart on JSON too and competes with mockr's hot-reload.
+
 ## Quick example
 
 ```ts
 import { mockr, handler } from '@yoyo-org/mockr';
 import { z } from 'zod';
 
-const server = await mockr({
+mockr({
   port: 4000,
   endpoints: [
     { url: '/api/orders', data: [{ id: 1, status: 'pending' }] },
@@ -33,8 +46,8 @@ const server = await mockr({
       method: 'POST',
       handler: handler({
         body: z.object({ id: z.number() }),
-        fn: (req, { endpoints }) => {
-          const orders = endpoints('/api/orders');
+        fn: (req, { endpoint }) => {
+          const orders = endpoint('/api/orders');
           orders.update(req.body.id, { status: 'shipped' });
           return { body: { ok: true } };
         },
@@ -42,17 +55,27 @@ const server = await mockr({
     },
   ],
 });
-
-// GET  /api/orders/1  → { id: 1, status: 'pending' }
-// POST /api/orders/ship { id: 1 }
-// GET  /api/orders/1  → { id: 1, status: 'shipped' }
-//
-// One data source, multiple routes — mutations are visible everywhere.
 ```
 
 ## How it works
 
-Give any URL a `data` array and mockr gives you a live, mutable REST API — GET, POST, PUT, PATCH, DELETE out of the box. Fetch it, modify it, fetch it again — changes persist in memory across requests. Every endpoint is stateful by default.
+Every endpoint is defined by a single `data` field. Its shape decides behavior:
+
+- **`data: T[]`** (array) → **list endpoint** with full CRUD — GET/POST/PUT/PATCH/DELETE out of the box. Mutations persist in memory across requests.
+- **`data: T`** (object) → **record endpoint** — a single mutable object. GET returns it; PATCH merges into it; PUT replaces it.
+
+For custom status codes, headers, or hand-rolled logic, use `handler({...})` instead. The old `body` and `response` shorthand fields are removed in v0.3.0; `body` is now reserved for the request side (`req.body`, `handler({ body: zodSchema })`).
+
+```ts
+endpoints: [
+  { url: '/api/todos',  data: [{ id: 1, title: 'Buy milk', done: false }] }, // list
+  { url: '/api/config', data: { theme: 'dark', lang: 'en' } },                // record
+  {
+    url: '/api/health',
+    handler: handler({ fn: () => ({ status: 200, body: { ok: true } }) }),
+  },
+]
+```
 
 ```ts
 import { mockr, handler } from '@yoyo-org/mockr';
@@ -89,8 +112,8 @@ const server = await mockr<Endpoints>({
       method: 'GET',
       handler: handler({
         query: z.object({ status: z.string().optional() }),
-        fn: (req, { endpoints }) => {
-          const orders = endpoints('/internal/orders');
+        fn: (req, { endpoint }) => {
+          const orders = endpoint('/internal/orders');
           const { status } = req.query;
           const results = status ? orders.where({ status }) : orders.data;
           return { body: { orders: results, total: results.length } };
@@ -104,9 +127,9 @@ const server = await mockr<Endpoints>({
       method: 'POST',
       handler: handler({
         body: z.object({ order_ids: z.array(z.string()), status: z.string() }),
-        fn: (req, { endpoints }) => {
+        fn: (req, { endpoint }) => {
           const { order_ids, status } = req.body;
-          const orders = endpoints('/internal/orders');
+          const orders = endpoint('/internal/orders');
           const updated = orders.updateMany(order_ids, { status });
           return { body: { updated } };
         },
@@ -119,8 +142,8 @@ const server = await mockr<Endpoints>({
       method: 'GET',
       handler: handler({
         params: z.object({ userId: z.string() }),
-        fn: (req, { endpoints }) => {
-          const orders = endpoints('/internal/orders');
+        fn: (req, { endpoint }) => {
+          const orders = endpoint('/internal/orders');
           const userOrders = orders.where((o) => o.user_id === req.params.userId);
           return { body: { orders: userOrders } };
         },
@@ -140,17 +163,141 @@ orders.where({ status: 'shipped' }); // Order[]
 
 Keep your mock data in JSON files instead of inlining it. `dataFile` auto-detects the shape:
 
-- **Array JSON** → data endpoint with full CRUD
-- **Object JSON** → static endpoint (read-only)
+- **Array JSON** → list endpoint with full CRUD (`ListHandle`)
+- **Object JSON** → record endpoint, mutable via PATCH/PUT (`RecordHandle`)
 
 ```ts
 const server = await mockr({
   port: 4000,
   endpoints: [
-    { url: '/api/todos', dataFile: './todos.json' },    // [{id:1}...] → CRUD
-    { url: '/api/config', dataFile: './config.json' },   // {...} → static
+    { url: '/api/todos',  dataFile: './todos.json' },   // [{id:1}...] → list, CRUD
+    { url: '/api/config', dataFile: './config.json' },  // {...} → record, PATCH/PUT
   ],
 });
+```
+
+Edit the JSON file on disk and the server picks up the change automatically — in-memory mutations are dropped (file content is the new truth).
+
+#### Typed `dataFile`
+
+A plain `dataFile: './x.json'` works but produces an untyped handle (`unknown`).
+Wrap the path with `file<T>(...)` to carry the JSON shape into the handle's type
+without committing to a static `import` (so JSON edits keep hot-reloading):
+
+```ts
+import { mockr, file } from 'mockr';
+
+interface Todo { id: number; title: string; done: boolean }
+interface Config { theme: string; lang: string }
+
+type Endpoints = {
+  '/api/todos': Todo[];
+  '/api/config': Config;
+};
+
+const server = await mockr<Endpoints>({
+  endpoints: [
+    { url: '/api/todos',  dataFile: file<Todo[]>('./todos.json') },   // ListHandle<Todo>
+    { url: '/api/config', dataFile: file<Config>('./config.json') }, // RecordHandle<Config>
+  ],
+});
+
+server.endpoint('/api/todos').findById(1); // Todo | undefined
+server.endpoint('/api/config').data.theme; // string
+```
+
+`file<T>()` returns a branded `FileRef<T>` whose runtime value is just the path.
+The server watches the file with `fs.watch` (debounced 100ms) and reloads on
+change — no static `import` required.
+
+### Validation with zod schemas
+
+`handler({ body, query, params, fn })` accepts optional zod schemas in any of the three slots. The schema's inferred output flows into `fn`'s `req` so `req.body`, `req.query`, and `req.params` are typed without manual casts. Invalid requests are rejected with `400` before `fn` runs.
+
+```ts
+import { mockr, handler } from 'mockr';
+import { z } from 'zod';
+
+await mockr({
+  port: 4000,
+  endpoints: [
+    {
+      url: '/api/orders',
+      method: 'POST',
+      handler: handler({
+        body:  z.object({ user_id: z.string(), total: z.number() }),
+        query: z.object({ trace: z.string().optional() }),
+        fn: (req) => {
+          req.body.user_id;   // string  (typed)
+          req.body.total;     // number  (typed)
+          req.query.trace;    // string | undefined
+          return { status: 201, body: { id: 'o1' } };
+        },
+      }),
+    },
+  ],
+});
+```
+
+### Multi-verb endpoints
+
+For a single verb, use the top-level `method` shorthand:
+
+```ts
+{ url: '/api/orders/ship', method: 'POST', handler: handler({ ... }) }
+```
+
+For multiple verbs on the same URL, drop `method` and use a nested `methods` object — one entry per verb. Cleaner than repeating the URL across array entries.
+
+```ts
+endpoints: [
+  {
+    url: '/api/cart',
+    methods: {
+      GET:  handler({ fn: (req, ctx) => ({ body: ctx.endpoint('/internal/cart').data }) }),
+      POST: handler({
+        body: z.object({ product_id: z.number(), quantity: z.number() }),
+        fn: (req, ctx) => {
+          ctx.endpoint('/internal/cart').insert(req.body as any);
+          return { body: { ok: true } };
+        },
+      }),
+    },
+  },
+]
+```
+
+`methods` may stand alone OR sit alongside `data`/`dataFile` (overrides specific verbs while default CRUD covers the rest). Verbs not in the map respond `405 Method Not Allowed` with an `Allow` header.
+
+### Scenarios
+
+Named server states you can switch between. Useful for demos, e2e tests, and reproducing edge cases.
+
+```ts
+await mockr({
+  endpoints: [
+    { url: '/api/users', data: [{ id: 1, name: 'Alice' }] },
+  ],
+  scenarios: {
+    empty:    (s) => { s.endpoint('/api/users').clear(); },
+    crowded:  (s) => {
+      const users = s.endpoint('/api/users');
+      users.insert({ name: 'Bob' });
+      users.insert({ name: 'Carol' });
+    },
+    down:     (s) => {
+      s.endpoint('/api/users').handler = () => ({
+        status: 503, body: { error: 'service down' },
+      });
+    },
+  },
+});
+
+// Programmatic switch
+await server.scenario('empty');
+
+// HTTP control
+// POST /__mockr/scenario  { "name": "down" }
 ```
 
 ### URL matching
@@ -163,6 +310,115 @@ endpoints: [
   { url: /^\/v\d+\//, handler: ... },                  // regex
 ]
 ```
+
+### Splitting mocks across files
+
+As your mocks grow, split them into typed groups using `endpoints<T>()`. Each group declares its own `Endpoints` slice; the top-level config composes them with intersection.
+
+```ts
+// src/mocks/cart.ts
+import { endpoints, handler } from 'mockr';
+import { z } from 'zod';
+
+interface CartItem { id: number; product_id: number; quantity: number }
+
+export type CartEndpoints = {
+  '/internal/cart': CartItem[];
+};
+
+export const cartMocks = endpoints<CartEndpoints>([
+  { url: '/internal/cart', data: [] },
+  {
+    url: '/api/cart',
+    method: 'POST',
+    handler: handler({
+      body: z.object({ product_id: z.number(), quantity: z.number() }),
+      fn: (req, ctx) => {
+        ctx.endpoint('/internal/cart').insert({
+          product_id: req.body.product_id,
+          quantity: req.body.quantity,
+        } as CartItem);
+        return { body: { ok: true } };
+      },
+    }),
+  },
+]);
+```
+
+```ts
+// src/mocks/orders.ts
+export type OrderEndpoints = {
+  '/internal/orders': Order[];
+};
+
+export const orderMocks = endpoints<OrderEndpoints>([ /* ... */ ]);
+```
+
+```ts
+// src/server.ts
+import { mockr } from 'mockr';
+import { cartMocks,  type CartEndpoints  } from './mocks/cart.js';
+import { orderMocks, type OrderEndpoints } from './mocks/orders.js';
+
+type Endpoints = CartEndpoints & OrderEndpoints;
+
+await mockr<Endpoints>({
+  port: 4000,
+  endpoints: [...cartMocks, ...orderMocks],
+});
+```
+
+#### Alternative: shared `types.ts`
+
+If you prefer a single source of truth, declare `Endpoints` once and have every mock group import it. Each group's handlers get full typing without per-group slices:
+
+```ts
+// src/types.ts
+export interface CartItem { id: number; product_id: number; quantity: number }
+export interface Order    { id: string;  user_id: string;    total: number    }
+
+export type Endpoints = {
+  '/internal/cart':   CartItem[];
+  '/internal/orders': Order[];
+};
+```
+
+```ts
+// src/mocks/cart.ts
+import { endpoints, handler } from 'mockr';
+import type { Endpoints } from '../types.js';
+
+export const cartMocks = endpoints<Endpoints>([ /* ... handlers see full Endpoints map ... */ ]);
+```
+
+```ts
+// src/mocks/orders.ts
+import { endpoints } from 'mockr';
+import type { Endpoints } from '../types.js';
+
+export const orderMocks = endpoints<Endpoints>([ /* ... */ ]);
+```
+
+```ts
+// src/server.ts
+import { mockr } from 'mockr';
+import type { Endpoints } from './types.js';
+import { cartMocks }   from './mocks/cart.js';
+import { orderMocks }  from './mocks/orders.js';
+
+await mockr<Endpoints>({ endpoints: [...cartMocks, ...orderMocks] });
+```
+
+Plain arrays also work — drop `endpoints<T>()` if you prefer no per-group type checking:
+
+```ts
+export const cartMocks = [
+  { url: '/internal/cart', dataFile: './cart.json' },
+  /* ... */
+];
+```
+
+`endpoints<T>()` is a runtime no-op — it only enforces shape per group at the type level. Top-level `mockr<E>()` keeps its explicit generic; groups don't replace it, they compose into it.
 
 ---
 
@@ -246,8 +502,8 @@ The `Endpoints` generic maps URLs to their response type:
 
 ```ts
 type Endpoints = {
-  '/api/items': Item[];           // array → data endpoint, handle.data is Item[]
-  '/api/config': AppConfig;       // object → static endpoint, handle.body is AppConfig
+  '/api/items': Item[];           // array → list endpoint, handle.data is Item[]
+  '/api/config': AppConfig;       // object → record endpoint, handle.data is AppConfig
 };
 
 const server = await mockr<Endpoints>({ ... });
@@ -258,30 +514,48 @@ items.findById(1);    // Item | undefined (ElementOf<Item[]>)
 items.insert({...});  // Item
 
 const config = server.endpoint('/api/config');
-config.body;          // AppConfig
+config.data;          // AppConfig
+config.set({ ... });  // shallow merge
+config.replace({ ... }); // full overwrite
 ```
 
 ## API reference
 
 ### `EndpointHandle<T>`
 
+`EndpointHandle<T>` is a conditional type:
+
+- `T extends T'[]` → `ListHandle<T'>`
+- `T extends object` → `RecordHandle<T>`
+
+#### `ListHandle<U>` — list endpoints (`data: T[]`)
+
 | Method | Return type | Description |
 |---|---|---|
-| `data` | `T` | The data (array for data endpoints, object for static) |
-| `body` | `T` | The response body |
-| `findById(id)` | `ElementOf<T> \| undefined` | Find item by id |
-| `where(filter)` | `ElementOf<T>[]` | Filter by object match or predicate |
-| `first()` | `ElementOf<T> \| undefined` | First item |
+| `data` | `U[]` | Live, mutable backing array |
+| `findById(id)` | `U \| undefined` | Find item by id |
+| `where(filter)` | `U[]` | Filter by object match or predicate |
+| `first()` | `U \| undefined` | First item |
 | `count()` | `number` | Number of items |
 | `has(id)` | `boolean` | Check if id exists |
-| `insert(item)` | `ElementOf<T>` | Add item (returns with generated id) |
-| `update(id, patch)` | `ElementOf<T> \| undefined` | Partial update |
-| `updateMany(ids, patch)` | `ElementOf<T>[]` | Update multiple items |
-| `patch(id, fields, defaults?)` | `ElementOf<T> \| undefined` | Apply non-undefined fields + defaults |
+| `insert(item)` | `U` | Add item (returns with generated id) |
+| `update(id, patch)` | `U \| undefined` | Partial update |
+| `updateMany(ids, patch)` | `U[]` | Update multiple items |
+| `patch(id, fields, defaults?)` | `U \| undefined` | Apply non-undefined fields + defaults |
 | `remove(id)` | `boolean` | Delete by id |
 | `clear()` | `void` | Remove all items |
 | `reset()` | `void` | Restore original data |
+| `replaceData(items)` | `void` | Replace data + baseline (used by `dataFile` hot-reload) |
 | `save(path)` | `Promise<void>` | Save to file |
+
+#### `RecordHandle<T>` — record endpoints (`data: T`)
+
+| Method | Description |
+|---|---|
+| `data` | Current object (read-only getter) |
+| `set(patch)` | Shallow merge `patch` into the current object |
+| `replace(value)` | Overwrite the entire object |
+| `reset()` | Restore the initial object via deep copy |
 
 ### `MockrServer`
 
@@ -307,3 +581,4 @@ See [`examples/`](./examples) for more usage patterns.
 ## License
 
 MIT
+

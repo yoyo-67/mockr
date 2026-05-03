@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mockr } from '../src/index.js';
+import { mockr, handler } from '../src/index.js';
 import { writeFile, mkdir } from 'node:fs/promises';
 
 describe('Level 4 — Cross-endpoint', () => {
@@ -18,15 +18,17 @@ describe('Level 4 — Cross-endpoint', () => {
         },
         {
           url: '/api/summary',
-          handler: (_req, { endpoints }) => {
-            const items = endpoints('/api/items');
-            return {
-              body: {
-                count: items.count(),
-                total: items.data.reduce((s: number, i: any) => s + i.price, 0),
-              },
-            };
-          },
+          handler: handler({
+            fn: (_req, { endpoint }) => {
+              const items = endpoint('/api/items');
+              return {
+                body: {
+                  count: items.count(),
+                  total: items.data.reduce((s: number, i: any) => s + i.price, 0),
+                },
+              };
+            },
+          }),
         },
       ],
     });
@@ -54,12 +56,14 @@ describe('Level 4 — Cross-endpoint', () => {
         {
           url: '/api/cart/add',
           method: 'POST',
-          handler: (req, { endpoints }) => {
-            const items = endpoints('/api/items');
-            const item = items.findById((req.body as any).itemId);
-            if (!item) return { status: 404, body: { error: 'Item not found' } };
-            return { body: { added: item } };
-          },
+          handler: handler({
+            fn: (req, { endpoint }) => {
+              const items = endpoint('/api/items');
+              const item = items.findById((req.body as any).itemId);
+              if (!item) return { status: 404, body: { error: 'Item not found' } };
+              return { body: { added: item } };
+            },
+          }),
         },
       ],
     });
@@ -81,7 +85,7 @@ describe('Level 4 — Cross-endpoint', () => {
     expect(res2.status).toBe(404);
   });
 
-  it('handler reads dataFile endpoint via ctx.endpoints().data', async () => {
+  it('handler reads dataFile endpoint via ctx.endpoint().data', async () => {
     const fixturesDir = '/tmp/mockr-test-cross-endpoint';
     await mkdir(fixturesDir, { recursive: true });
     const dataPath = `${fixturesDir}/items.json`;
@@ -95,15 +99,17 @@ describe('Level 4 — Cross-endpoint', () => {
         { url: '/api/items', dataFile: dataPath },
         {
           url: '/api/summary',
-          handler: (_req, { endpoints }) => {
-            const items = endpoints('/api/items');
-            return {
-              body: {
-                count: items.count(),
-                total: items.data.reduce((s: number, i: any) => s + i.price, 0),
-              },
-            };
-          },
+          handler: handler({
+            fn: (_req, { endpoint }) => {
+              const items = endpoint('/api/items');
+              return {
+                body: {
+                  count: items.count(),
+                  total: items.data.reduce((s: number, i: any) => s + i.price, 0),
+                },
+              };
+            },
+          }),
         },
       ],
     });

@@ -1,0 +1,54 @@
+# 02 — Data files
+
+Move state out of the server file into JSON. Edit the JSON; the endpoint reloads in place.
+
+[Open in StackBlitz →](https://stackblitz.com/github/yoyo-67/mockr/tree/experiments/examples/02-data-files?file=server.ts)
+
+## Concept
+
+`dataFile` reads a JSON file at boot and on disk change (debounced 100 ms). Shape decides behavior:
+
+- **Array JSON** → list endpoint, full CRUD.
+- **Object JSON** → record endpoint, GET / PATCH / PUT.
+
+Wrap the path with `file<T>('./x.json')` to carry the JSON shape into the handle's type without committing to a static `import` (so JSON edits keep hot-reloading).
+
+## Code
+
+```ts
+import { mockr, file } from '@yoyo-org/mockr';
+
+interface Product { id: number; name: string; price: number; stock: number }
+interface AppConfig { feature_dark_mode: boolean; max_upload_mb: number }
+
+type Endpoints = {
+  '/api/products': Product[];
+  '/api/config': AppConfig;
+};
+
+await mockr<Endpoints>({
+  port: 3002,
+  endpoints: [
+    { url: '/api/products', dataFile: file<Product[]>('./products.json') },
+    { url: '/api/config',   dataFile: file<AppConfig>('./config.json') },
+  ],
+});
+```
+
+## Hot-reload semantics
+
+Editing the file resets the endpoint: in-memory mutations (POSTs since the last reload) are dropped; the file content becomes the new state. Last-known-good is kept across bad JSON, so a typo doesn't crash the server.
+
+## Try it
+
+```http
+GET   http://localhost:3002/api/products
+POST  http://localhost:3002/api/products      { "name": "Webcam", "price": 60, "stock": 12 }
+PATCH http://localhost:3002/api/config        { "max_upload_mb": 100 }
+```
+
+Now save `products.json` with one item removed — `GET /api/products` reflects it on the next request.
+
+## What's next
+
+Join data across endpoints inside a handler → [03 — Cross-endpoint](./03-cross-endpoint).
