@@ -1,11 +1,11 @@
 ### Filtered list: upstream returns ~100 posts; mockr drops short titles.
-GET http://localhost:3006/posts
+GET http://localhost:3009/posts
 
 ### Enriched record: upstream Todo plus added _localTag.
-GET http://localhost:3006/todos/1
+GET http://localhost:3009/todos/1
 
 ### Live forward (no stub flag): hits upstream as-is.
-GET http://localhost:3006/users/1
+GET http://localhost:3009/users/1
 
 ### Synthetic stub (skips forward entirely).
-GET http://localhost:3006/users/1?stub=1
+GET http://localhost:3009/users/1?stub=1

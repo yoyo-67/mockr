@@ -1,0 +1,17 @@
+### List products (array JSON → list endpoint)
+GET http://localhost:3002/api/products
+
+### Insert via POST — persists in memory until file reloads.
+POST http://localhost:3002/api/products
+Content-Type: application/json
+
+{ "name": "Webcam", "price": 60, "category": "electronics", "stock": 12 }
+
+### Read config (object JSON → record endpoint)
+GET http://localhost:3002/api/config
+
+### Patch one field (record endpoints support shallow merge)
+PATCH http://localhost:3002/api/config
+Content-Type: application/json
+
+{ "max_upload_mb": 100 }

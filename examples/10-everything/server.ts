@@ -1,5 +1,9 @@
-// Chat API — fixtures from files, error injection, cross-endpoint joins,
-// URL params, regex routes, custom middleware, scenarios.
+// Kitchen-sink showcase: dataFile + cross-endpoint + URL params + middleware
+// (logger/delay/errorInjection/custom) + scenarios — all in one server.
+//
+// Each individual feature is demoed in isolation in the earlier examples
+// (02-data-files, 03-cross-endpoint, 04-handlers-zod, 05-middleware,
+// 06-scenarios). This one shows them composed.
 
 import { mockr, delay, logger, errorInjection, handler } from '../../src/index.js';
 
@@ -19,12 +23,12 @@ interface Message {
 }
 
 type Endpoints = {
-  '/internal/rooms': Room;
-  '/internal/messages': Message;
+  '/internal/rooms': Room[];
+  '/internal/messages': Message[];
 };
 
 const server = await mockr<Endpoints>({
-  port: 3004,
+  port: 3010,
   middleware: [
     logger(),
     delay({ min: 20, max: 80 }),
@@ -108,7 +112,7 @@ const server = await mockr<Endpoints>({
           author,
           text,
           timestamp: new Date().toISOString(),
-        });
+        } as Message);
 
         return { status: 201, body: msg };
       } }),
@@ -171,7 +175,7 @@ const server = await mockr<Endpoints>({
           author: ['alice', 'bob', 'charlie'][i % 3],
           text: `Message #${i + 1} in a busy channel`,
           timestamp: new Date(Date.now() - (20 - i) * 60000).toISOString(),
-        });
+        } as Message);
       }
     },
 

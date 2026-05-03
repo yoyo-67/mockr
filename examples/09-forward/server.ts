@@ -1,8 +1,10 @@
-// Forward example: hit a real backend through ctx.forward(), then mutate
-// the response before returning to the client. Useful for filtering,
-// enriching, or stubbing parts of an upstream response.
+// Feature: ctx.forward().
 //
-// Usage: npx tsx examples/forward/server.ts
+// Forward the current request to `proxy.target`, then mutate the upstream
+// response before returning to the client. Three patterns shown:
+//   1. Filter a list — drop items from upstream.
+//   2. Enrich a record — add fields to upstream.
+//   3. Conditional forward — synthetic stub for one query flag, live otherwise.
 
 import { mockr, handler } from '../../src/index.js';
 
@@ -28,7 +30,7 @@ type Endpoints = {
 };
 
 const server = await mockr<Endpoints>({
-  port: 3006,
+  port: 3009,
   proxy: { target: TARGET },
   endpoints: [
     // Filter list: forward to upstream, drop posts whose title is too short.

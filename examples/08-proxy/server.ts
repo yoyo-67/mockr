@@ -1,12 +1,14 @@
-// Proxy example: mock some routes, forward everything else to a real backend.
-// Usage: npx tsx examples/proxy/server.ts
+// Feature: proxy.target — passthrough for unmatched routes.
+//
+// Define mock endpoints for the routes you're working on; everything else
+// gets forwarded verbatim to the real backend.
 
 import { mockr, handler } from '../../src/index.js';
 
 const TARGET = process.env.PROXY_TARGET || 'https://jsonplaceholder.typicode.com';
 
 const server = await mockr({
-  port: 3005,
+  port: 3008,
   endpoints: [
     {
       url: '/api/feature-flags',

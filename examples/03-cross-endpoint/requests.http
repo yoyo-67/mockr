@@ -1,0 +1,17 @@
+### Empty cart — joins /internal/cart with /internal/products.
+GET http://localhost:3003/api/cart
+
+### Add an item — handler updates /internal/products stock + inserts into /internal/cart.
+POST http://localhost:3003/api/cart
+Content-Type: application/json
+
+{ "product_id": 1, "quantity": 2 }
+
+### Cart now has the item with name + subtotal joined in.
+GET http://localhost:3003/api/cart
+
+### Out-of-stock guard.
+POST http://localhost:3003/api/cart
+Content-Type: application/json
+
+{ "product_id": 3, "quantity": 999 }

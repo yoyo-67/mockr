@@ -1,0 +1,17 @@
+### Valid body — passes schema.
+POST http://localhost:3004/api/orders
+Content-Type: application/json
+
+{ "user_id": "u1", "total": 99 }
+
+### Invalid body — `total` negative, schema rejects with 400.
+POST http://localhost:3004/api/orders
+Content-Type: application/json
+
+{ "user_id": "u1", "total": -1 }
+
+### URL params + query schema, both typed in handler.
+GET http://localhost:3004/api/users/u1/orders?status=shipped&limit=5
+
+### Bad enum value — 400 from zod.
+GET http://localhost:3004/api/users/u1/orders?status=garbage
