@@ -2,7 +2,14 @@
 
 Named server states you can switch between. Useful for demos, e2e tests, and reproducing edge cases.
 
-[Open in StackBlitz →](https://stackblitz.com/github/yoyo-67/mockr/tree/experiments/examples/06-scenarios?file=server.ts)
+::: tip Run this chapter in 30 seconds
+1. **[Open in StackBlitz →](https://stackblitz.com/github/yoyo-67/mockr?file=examples/06-scenarios/server.ts)** — full Node sandbox in your browser, no install.
+2. Wait for `npm install` to finish, then in the Terminal tab run:
+   ```
+   npx tsx examples/06-scenarios/server.ts
+   ```
+3. Paste any request from the *Try it* section below into the Terminal (use `curl` — the StackBlitz preview port is forwarded).
+:::
 
 ## Concept
 

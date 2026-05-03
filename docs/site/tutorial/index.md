@@ -1,6 +1,6 @@
 # Tutorial
 
-Ten short chapters. Each isolates one feature, simplest first. Code in every chapter mirrors a working example in [`examples/`](https://github.com/yoyo-67/mockr/tree/experiments/examples) — clone the repo or open the chapter live in StackBlitz.
+Ten short chapters. Each isolates one feature, simplest first. Code in every chapter mirrors a working example in [`examples/`](https://github.com/yoyo-67/mockr/tree/main/examples) — clone the repo or open the chapter live in StackBlitz.
 
 | # | Chapter | Feature |
 |---|---|---|

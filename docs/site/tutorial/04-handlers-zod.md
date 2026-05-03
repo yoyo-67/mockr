@@ -2,7 +2,14 @@
 
 `handler({ body, query, params, fn })` accepts optional zod schemas. Schema output flows into `req` so `req.body`, `req.query`, `req.params` are typed without manual casts.
 
-[Open in StackBlitz →](https://stackblitz.com/github/yoyo-67/mockr/tree/experiments/examples/04-handlers-zod?file=server.ts)
+::: tip Run this chapter in 30 seconds
+1. **[Open in StackBlitz →](https://stackblitz.com/github/yoyo-67/mockr?file=examples/04-handlers-zod/server.ts)** — full Node sandbox in your browser, no install.
+2. Wait for `npm install` to finish, then in the Terminal tab run:
+   ```
+   npx tsx examples/04-handlers-zod/server.ts
+   ```
+3. Paste any request from the *Try it* section below into the Terminal (use `curl` — the StackBlitz preview port is forwarded).
+:::
 
 ## Concept
 

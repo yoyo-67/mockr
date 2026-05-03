@@ -2,7 +2,14 @@
 
 Many HTTP verbs on the same URL — group them in a `methods` map instead of repeating the URL across array entries.
 
-[Open in StackBlitz →](https://stackblitz.com/github/yoyo-67/mockr/tree/experiments/examples/07-multi-method?file=server.ts)
+::: tip Run this chapter in 30 seconds
+1. **[Open in StackBlitz →](https://stackblitz.com/github/yoyo-67/mockr?file=examples/07-multi-method/server.ts)** — full Node sandbox in your browser, no install.
+2. Wait for `npm install` to finish, then in the Terminal tab run:
+   ```
+   npx tsx examples/07-multi-method/server.ts
+   ```
+3. Paste any request from the *Try it* section below into the Terminal (use `curl` — the StackBlitz preview port is forwarded).
+:::
 
 ## Concept
 

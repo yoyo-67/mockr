@@ -2,7 +2,14 @@
 
 Inside a handler, `ctx.endpoint(url)` gives a typed handle to any other endpoint's data.
 
-[Open in StackBlitz →](https://stackblitz.com/github/yoyo-67/mockr/tree/experiments/examples/03-cross-endpoint?file=server.ts)
+::: tip Run this chapter in 30 seconds
+1. **[Open in StackBlitz →](https://stackblitz.com/github/yoyo-67/mockr?file=examples/03-cross-endpoint/server.ts)** — full Node sandbox in your browser, no install.
+2. Wait for `npm install` to finish, then in the Terminal tab run:
+   ```
+   npx tsx examples/03-cross-endpoint/server.ts
+   ```
+3. Paste any request from the *Try it* section below into the Terminal (use `curl` — the StackBlitz preview port is forwarded).
+:::
 
 ## Concept
 
