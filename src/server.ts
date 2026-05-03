@@ -305,9 +305,10 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     throw new Error(`Endpoint not found: ${url}`);
   }
 
-  const handlerContext: HandlerContext = {
-    endpoint: ((url: string) => getEndpointHandle(url)) as HandlerContext['endpoint'],
-  };
+  // Module-level slice of HandlerContext shared across requests. Per-request
+  // augmentation (currently `forward`) happens in `handleRequest`.
+  const handlerContextEndpoint: HandlerContext['endpoint'] =
+    ((url: string) => getEndpointHandle(url)) as HandlerContext['endpoint'];
 
   /**
    * Build a scenario-flavored handle on top of an endpoint's underlying
@@ -486,6 +487,62 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
 
     const fakeReq: MockrRequest = { method, path, params: {}, query, headers: reqHeaders, body };
 
+    // Per-request ctx — augments shared `handlerContext` with `forward` that
+    // captures the current request and dispatches to the configured proxy.
+    let forwardUsed = false;
+    const ctx: HandlerContext = {
+      endpoint: handlerContextEndpoint,
+      forward: (async (patch?: import('./types.js').ForwardPatch) => {
+        if (!proxyTarget) {
+          throw new Error('ctx.forward() requires proxy.target in mockr config');
+        }
+        forwardUsed = true;
+        const fwdMethod = (patch?.method ?? method).toUpperCase();
+        const fwdPath = patch?.path ?? fullUrl;
+        const baseHeaders = patch?.headers ?? reqHeaders;
+        // Drop hop-by-hop / body-derived headers — when method or body changes
+        // they no longer match. fetch will recompute as needed.
+        const fwdHeaders: Record<string, string | string[] | undefined> = {};
+        for (const [k, v] of Object.entries(baseHeaders)) {
+          const lk = k.toLowerCase();
+          if (lk === 'content-length' || lk === 'transfer-encoding' || lk === 'connection') continue;
+          fwdHeaders[k] = v;
+        }
+        const fwdBody = patch && 'body' in patch ? patch.body : body;
+
+        // Mem-session lookup BEFORE fetch — replay returns cached upstream
+        // response so handler mutation runs fresh on a clone (cache stays clean).
+        const cacheKey = { method: fwdMethod, path: getPath(fwdPath), query: parseQuery(fwdPath) };
+        const cached = memorySessions.lookupResponse(cacheKey);
+        if (cached) {
+          return {
+            status: cached.status,
+            body: structuredClone(cached.body),
+            headers: { ...cached.headers },
+          } as { status: number; body: unknown; headers: Record<string, string | string[]> };
+        }
+
+        const result = await handleProxy(fwdMethod, fwdPath, fwdHeaders, fwdBody);
+        if (!result) throw new Error('ctx.forward() proxy target unreachable');
+
+        // Record AFTER fetch — snapshot upstream pre-mutation. Handler will
+        // mutate `result.body` next; we deep-copy so the cached entry is
+        // immune to that mutation.
+        const ctHeader = result.headers && (result.headers as Record<string, unknown>)['content-type'];
+        const contentType = (typeof ctHeader === 'string' ? ctHeader : '') || 'application/json';
+        const bodyText = typeof result.body === 'string' ? result.body : JSON.stringify(result.body);
+        memorySessions.recordResponse(cacheKey, {
+          status: result.status || 200,
+          headers: result.headers || {},
+          body: typeof result.body === 'object' && result.body !== null ? structuredClone(result.body) : result.body,
+          bodyText,
+          contentType,
+        });
+
+        return result as { status: number; body: unknown; headers: Record<string, string | string[]> };
+      }) as HandlerContext['forward'],
+    };
+
     // Scenario switching
     if (path === '/__mockr/scenario' && method === 'POST') {
       const reqBody = body as { name?: string } | undefined;
@@ -513,7 +570,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     }
 
     let handlerResult: HandlerResult | null = null;
-    let source: 'mock' | 'proxy' | '404' = '404';
+    let source: 'mock' | 'proxy' | '404' | 'fwd' = '404';
 
     // 1. Try endpoints (first match wins)
     for (const ep of endpoints) {
@@ -537,7 +594,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
               fakeReq,
             );
             if (validationError) { handlerResult = validationError; source = 'mock'; break; }
-            handlerResult = await spec.fn(fakeReq, handlerContext);
+            handlerResult = await spec.fn(fakeReq, ctx);
             source = 'mock';
             break;
           }
@@ -558,7 +615,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
           const routeMatch = ep.matcher(path);
           if (routeMatch) {
             fakeReq.params = routeMatch.params as Record<string, string>;
-            handlerResult = await ep.activeHandler(fakeReq, handlerContext);
+            handlerResult = await ep.activeHandler(fakeReq, ctx);
             source = 'mock';
             break;
           }
@@ -588,7 +645,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
           fakeReq.params = routeMatch.params as Record<string, string>;
           const validationError = validateSchemas(ep.schemas, fakeReq);
           if (validationError) { handlerResult = validationError; source = 'mock'; break; }
-          handlerResult = await handlerFn(fakeReq, handlerContext);
+          handlerResult = await handlerFn(fakeReq, ctx);
           source = 'mock';
           break;
         }
@@ -666,7 +723,8 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
 
     const status = handlerResult.status || 200;
     const ms = (performance.now() - start).toFixed(0);
-    const tag = source === 'mock' ? 'mock' : source === 'proxy' ? '  ->' : ' 404';
+    if (source === 'mock' && forwardUsed) source = 'fwd';
+    const tag = source === 'mock' ? 'mock' : source === 'proxy' ? '  ->' : source === 'fwd' ? ' fwd' : ' 404';
     console.log(`  ${tag}  ${method.padEnd(6)} ${status} ${fullUrl} ${ms}ms`);
 
     if ('raw' in handlerResult && handlerResult.raw) {

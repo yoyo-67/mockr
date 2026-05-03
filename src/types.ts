@@ -27,10 +27,30 @@ export type HandlerResult =
   | { status: number; body: unknown; headers?: Record<string, string | string[]> }
   | { raw: true; body: string | Buffer; status: number; headers: Record<string, string | string[]> };
 
-export interface HandlerContext<TEndpoints = Record<string, unknown>> {
+export interface ForwardPatch {
+  path?: string;
+  method?: string;
+  headers?: Record<string, string | string[] | undefined>;
+  body?: unknown;
+}
+
+export type ForwardResult<T = unknown> = {
+  status: number;
+  body: T;
+  headers: Record<string, string | string[]>;
+  raw?: boolean;
+};
+
+type CurrentEndpointBody<TEndpoints, K extends keyof TEndpoints> =
+  TEndpoints[K] extends readonly (infer U)[] ? U[] : TEndpoints[K];
+
+export interface HandlerContext<TEndpoints = Record<string, unknown>, TCurrentUrl extends keyof TEndpoints | undefined = undefined> {
   endpoint: [keyof TEndpoints] extends [never]
     ? (url: string) => EndpointHandle<unknown[]>
     : <K extends keyof TEndpoints>(url: K) => EndpointHandle<TEndpoints[K] extends readonly unknown[] | object ? TEndpoints[K] : unknown>;
+  forward: TCurrentUrl extends keyof TEndpoints
+    ? <T = CurrentEndpointBody<TEndpoints, TCurrentUrl>>(patch?: ForwardPatch) => Promise<ForwardResult<T>>
+    : <T = unknown>(patch?: ForwardPatch) => Promise<ForwardResult<T>>;
 }
 
 export interface Middleware {
