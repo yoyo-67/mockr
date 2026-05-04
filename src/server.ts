@@ -444,9 +444,32 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     if (!proxyTarget) return null;
     const targetUrl = proxyTarget + url;
     const fetchHeaders: Record<string, string> = {};
+    // Drop proxy-injected headers (frontend dev-servers add x-forwarded-* /
+    // forwarded / via when proxying to mockr) so upstream access logs don't
+    // see the hop. Origin/Referer are rewritten below — must drop incoming
+    // localhost values first or CSRF/origin checks reject the request.
+    const stripReq = new Set([
+      'host',
+      'forwarded',
+      'via',
+      'x-forwarded-for',
+      'x-forwarded-host',
+      'x-forwarded-port',
+      'x-forwarded-proto',
+      'x-forwarded-server',
+      'x-real-ip',
+      'origin',
+      'referer',
+    ]);
     for (const [k, v] of Object.entries(headers)) {
-      if (v && k.toLowerCase() !== 'host') fetchHeaders[k] = Array.isArray(v) ? v.join(', ') : v;
+      if (v && !stripReq.has(k.toLowerCase())) fetchHeaders[k] = Array.isArray(v) ? v.join(', ') : v;
     }
+    // Rewrite Origin + Referer to upstream so server-side CSRF checks
+    // (Django's CSRF_TRUSTED_ORIGINS, Rails authenticity_token, etc.) see the
+    // request as same-origin instead of rejecting localhost:3000.
+    const target = new URL(proxyTarget);
+    fetchHeaders['origin'] = `${target.protocol}//${target.host}`;
+    fetchHeaders['referer'] = `${target.protocol}//${target.host}${url}`;
     const fetchOpts: RequestInit = { method, headers: fetchHeaders, redirect: 'manual' };
     if (body && method !== 'GET' && method !== 'HEAD') fetchOpts.body = JSON.stringify(body);
 
