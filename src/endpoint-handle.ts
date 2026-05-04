@@ -1,32 +1,37 @@
 import { createListHandle, type ListHandle, type ListHandleOptions } from './list-handle.js';
 import { createRecordHandle, type RecordHandle } from './record-handle.js';
+import type { WsEndpoint, WsHandle } from './ws.js';
 
 /**
  * Superset of every shape `EndpointHandle` can produce. Used as the fallback
  * when the caller does not pass an `Endpoints` generic and `T` collapses to
- * `unknown`. The intersection makes both list and record method surfaces
+ * `unknown`. The intersection makes list, record, and ws method surfaces
  * structurally accessible so untyped consumers can still call `.data`,
- * `.findById`, `.count`, `.set`, etc. without narrowing.
+ * `.findById`, `.count`, `.set`, `.broadcast`, etc. without narrowing.
  */
-export type AnyEndpointHandle = ListHandle<unknown> & RecordHandle<Record<string, unknown>>;
+export type AnyEndpointHandle = ListHandle<unknown> & RecordHandle<Record<string, unknown>> & WsHandle<unknown>;
 
 /**
- * Conditional handle type. Picks `ListHandle` when `T` is an array, and
- * `RecordHandle` when `T` is a non-array object. Anything else is `never`.
+ * Conditional handle type. Picks the right handle shape based on `T`:
+ * - `WsEndpoint<Out, In>` → `WsHandle<Out>`
+ * - array → `ListHandle<U>`
+ * - non-array object → `RecordHandle<T>`
  *
  * The `unknown extends T` check (with `unknown` on the LEFT) only matches
  * when `T` is exactly `unknown`, so untyped callers fall back to the union
- * `AnyEndpointHandle`. Typed callers (`Foo[]`, `{ x: 1 }`) bypass the check
- * and reach the precise narrowed branches below.
+ * `AnyEndpointHandle`. Typed callers (`WsEndpoint<...>`, `Foo[]`, `{ x: 1 }`)
+ * bypass the check and reach the precise narrowed branches below.
  */
 export type EndpointHandle<T = unknown> =
   unknown extends T
     ? AnyEndpointHandle
-    : T extends readonly (infer U)[]
-      ? ListHandle<U>
-      : T extends object
-        ? RecordHandle<T>
-        : never;
+    : T extends WsEndpoint<infer O, any>
+      ? WsHandle<O>
+      : T extends readonly (infer U)[]
+        ? ListHandle<U>
+        : T extends object
+          ? RecordHandle<T>
+          : never;
 
 /** Options accepted by `createEndpointHandle`. */
 export type EndpointHandleOptions = ListHandleOptions;

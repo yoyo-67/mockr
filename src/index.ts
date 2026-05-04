@@ -18,6 +18,8 @@ export type {
 } from './types.js';
 export { handler, isHandlerSpec, HANDLER_SPEC_BRAND } from './handler.js';
 export type { HandlerSpec } from './handler.js';
+export { ws, isWsSpec, WS_SPEC_BRAND } from './ws.js';
+export type { WsSpec, WsEndpoint, WsHandle, WsClient, WsFactoryOpts, WsConnectCtx, WsMessageCtx, WsCloseCtx } from './ws.js';
 export { endpoints } from './endpoints-helper.js';
 export { file, isFileRef, getFilePath, FILE_REF_BRAND } from './file.js';
 export type { FileRef } from './file.js';

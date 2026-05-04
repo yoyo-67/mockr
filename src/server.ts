@@ -16,6 +16,8 @@ import { createListHandle } from './list-handle.js';
 import { createRecordHandle, type RecordHandle } from './record-handle.js';
 import { createEndpointHandle } from './endpoint-handle.js';
 import { isHandlerSpec } from './handler.js';
+import { isWsSpec } from './ws.js';
+import { createWsRuntime, closeAllClients, type WsRuntime } from './ws-runtime.js';
 import { isFileRef, getFilePath } from './file.js';
 import { createMatcher } from './router.js';
 import { createRecorder, type Recorder } from './recorder.js';
@@ -123,6 +125,11 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
   // Stored separately so `server.endpoint()` returns the same instance the
   // request handler reads from.
   const recordHandles = new Map<InternalEndpoint, RecordHandle<object>>();
+
+  // Per-endpoint WS runtimes. Indexed by InternalEndpoint so URL/matcher
+  // lookups go through the shared `endpoints[]` walk; the upgrade handler
+  // dereferences `ep.wsRuntime` after a matcher hit.
+  const wsRuntimes = new Set<WsRuntime>();
 
   function pushDataEndpoint(
     url: string | RegExp,
@@ -259,6 +266,28 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
         schemas,
         disabled: false,
       });
+    } else if ('ws' in def && def.ws !== undefined) {
+      // WebSocket endpoint. The HTTP request path is never invoked for these —
+      // dispatch happens through the `upgrade` event on the http server below.
+      const runtime = createWsRuntime(def.ws);
+      const ep: InternalEndpoint = {
+        url: def.url,
+        matcher,
+        listHandle: null,
+        staticBody: undefined,
+        staticResponse: { status: 200, headers: {}, body: undefined },
+        activeHandler: null,
+        idKey: 'id',
+        isData: false,
+        isHandler: false,
+        isStatic: false,
+        handlerFn: null,
+        schemas: null,
+        disabled: false,
+        wsRuntime: runtime,
+      };
+      endpoints.push(ep);
+      wsRuntimes.add(runtime);
     } else if ('methods' in def && def.methods !== undefined) {
       // Standalone `methods` form — no data store, all verbs explicit. Per-verb
       // dispatch happens in the request handler via `ep.methods`.
@@ -286,6 +315,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
 
   /** Pick the right kind of public handle for an endpoint. */
   function getEndpointHandleFor(ep: InternalEndpoint): EndpointHandle<unknown> | null {
+    if (ep.wsRuntime) return ep.wsRuntime.handle as unknown as EndpointHandle<unknown>;
     if (ep.listHandle) return ep.listHandle as unknown as EndpointHandle<unknown>;
     const rec = recordHandles.get(ep);
     if (rec) return rec as unknown as EndpointHandle<unknown>;
@@ -346,6 +376,9 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
 
   // Scenarios
   function applyScenario(name: string) {
+    // Drop existing ws connections so old per-connection state does not leak
+    // into the new scenario. Clients reconnect, get fresh `initialState()`.
+    if (wsRuntimes.size > 0) closeAllClients(wsRuntimes, 1012, 'scenario switch');
     for (const ep of endpoints) {
       if (ep.listHandle) ep.listHandle.reset();
       const rec = recordHandles.get(ep);
@@ -802,6 +835,28 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     }
   });
 
+  // WebSocket upgrade handling. Match the request path against any registered
+  // ws endpoint; on hit, hand off to its runtime. On miss, close the socket —
+  // proxy passthrough for ws upgrades is a separate phase.
+  server.on('upgrade', (req, sock, head) => {
+    const url = req.url || '/';
+    const path = getPath(url);
+    for (const ep of endpoints) {
+      if (!ep.wsRuntime) continue;
+      const m = ep.matcher(path);
+      if (!m) continue;
+      const start = performance.now();
+      const epUrlStr = typeof ep.url === 'string' ? ep.url : ep.url.source;
+      console.log(`  ws    OPEN          ${epUrlStr} 0ms`);
+      ep.wsRuntime.handleUpgrade(req, sock, head, m.params);
+      void start;
+      return;
+    }
+    // No mock matched — refuse the upgrade. (Proxy passthrough TBD.)
+    sock.write('HTTP/1.1 404 Not Found\r\n\r\n');
+    sock.destroy();
+  });
+
   return new Promise<MockrServer<TEndpoints>>((resolvePromise, reject) => {
     server.listen(config.port ?? 0, () => {
       const addr = server.address();
@@ -838,6 +893,10 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
         },
         async close() {
           dataFileWatcher.closeAll();
+          if (wsRuntimes.size > 0) {
+            closeAllClients(wsRuntimes, 1001, 'going away');
+            for (const r of wsRuntimes) r.wss.close();
+          }
           return new Promise<void>((res, rej) => { server.close((err) => (err ? rej(err) : res())); });
         },
         async setPort(newPort: number) {

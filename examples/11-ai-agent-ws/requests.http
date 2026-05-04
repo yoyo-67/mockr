@@ -1,0 +1,9 @@
+### Push a frame to every connected /ws/agent client.
+### Run client.ts in another terminal first to see the broadcast arrive.
+POST http://localhost:3011/api/broadcast
+Content-Type: application/json
+
+{ "text": "ping from REST" }
+
+### REST Client cannot drive WebSockets — use client.ts to exercise /ws/agent:
+###   npx tsx examples/11-ai-agent-ws/client.ts

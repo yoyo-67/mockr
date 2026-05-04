@@ -1,6 +1,7 @@
 import type { MockrConfig, EndpointDef } from './types.js';
 import { isHandlerSpec } from './handler.js';
 import { isFileRef } from './file.js';
+import { isWsSpec } from './ws.js';
 
 const KNOWN_KEYS = new Set([
   'url',
@@ -10,6 +11,7 @@ const KNOWN_KEYS = new Set([
   'handler',
   'methods',
   'idKey',
+  'ws',
 ]);
 
 const VALID_VERBS = new Set([
@@ -90,6 +92,7 @@ export function validateConfig(config: MockrConfig<any>): ValidationResult {
     const hasHandler = 'handler' in def && def.handler !== undefined;
     const hasMethods = 'methods' in def && def.methods !== undefined;
     const hasMethod = 'method' in def && def.method !== undefined;
+    const hasWs = 'ws' in def && (def as { ws?: unknown }).ws !== undefined;
 
     if (hasData && hasHandler) push("cannot set both 'data' and 'handler'");
     if (hasData && hasFile) push("cannot set both 'data' and 'dataFile'");
@@ -98,6 +101,12 @@ export function validateConfig(config: MockrConfig<any>): ValidationResult {
       push("cannot set both 'handler' and 'methods' (use methods alone)");
     if (hasMethod && hasMethods)
       push("cannot set both 'method' and 'methods'");
+    if (hasWs && (hasData || hasFile || hasHandler || hasMethods)) {
+      push("cannot set 'ws' together with data/dataFile/handler/methods");
+    }
+    if (hasWs && !isWsSpec((def as { ws?: unknown }).ws)) {
+      push("'ws' must be created by ws({...})");
+    }
 
     // Handler must be factory result
     if (hasHandler && !isHandlerSpec(def.handler)) {

@@ -1,6 +1,7 @@
 import type { HandlerSpec } from './handler.js';
 import type { FileRef } from './file.js';
 import type { EndpointHandle } from './endpoint-handle.js';
+import type { WsSpec } from './ws.js';
 
 export type { EndpointHandle } from './endpoint-handle.js';
 
@@ -90,6 +91,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       handler?: never;
       body?: never;
       response?: never;
+      ws?: never;
     }
   | {
       url: string | RegExp;
@@ -101,6 +103,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       handler?: never;
       body?: never;
       response?: never;
+      ws?: never;
     }
   | {
       url: string | RegExp;
@@ -118,6 +121,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       body?: never;
       response?: never;
       methods?: never;
+      ws?: never;
     }
   | {
       url: string | RegExp;
@@ -126,6 +130,19 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       data?: never;
       dataFile?: never;
       handler?: never;
+      body?: never;
+      response?: never;
+      idKey?: never;
+      ws?: never;
+    }
+  | {
+      url: string | RegExp;
+      ws: WsSpec<any, any, any>;
+      method?: never;
+      data?: never;
+      dataFile?: never;
+      handler?: never;
+      methods?: never;
       body?: never;
       response?: never;
       idKey?: never;

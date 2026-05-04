@@ -33,6 +33,8 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.0",
     "vitepress": "^1.6.4",
     "vitest": "^3.0.0",
@@ -50,6 +52,7 @@
     "@yoyo-org/tui-kit": "^0.1.0",
     "path-to-regexp": "^8.2.0",
     "prettier": "^3.8.1",
-    "ts-morph": "^27.0.2"
+    "ts-morph": "^27.0.2",
+    "ws": "^8.20.0"
   }
 }

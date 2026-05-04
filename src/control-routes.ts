@@ -9,6 +9,7 @@ import type { HandlerSpec } from './handler.js';
 import type { ListHandle } from './list-handle.js';
 import { createListHandle } from './list-handle.js';
 import { createRecordHandle, type RecordHandle } from './record-handle.js';
+import type { WsRuntime } from './ws-runtime.js';
 import { createMatcher } from './router.js';
 import { generateInterface, urlToFileName, urlToTypeName } from './type-generator.js';
 import { sendCorsJson, handleCorsOptions } from './http-utils.js';
@@ -47,6 +48,8 @@ export interface InternalEndpoint {
   filePath?: string;
   /** Per-verb handler overlay; takes precedence over default CRUD/handler dispatch. */
   methods?: Partial<Record<string, HandlerSpec<any, any, any, any>>>;
+  /** WebSocket runtime when the endpoint was declared with `ws: ws({...})`. */
+  wsRuntime?: WsRuntime;
 }
 
 interface ControlRoutesConfig {
