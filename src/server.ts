@@ -20,7 +20,7 @@ import { isFileRef, getFilePath } from './file.js';
 import { createMatcher } from './router.js';
 import { createRecorder, type Recorder } from './recorder.js';
 import { createMemorySessionStore, type MemorySessionStore } from './memory-session.js';
-import { parseQuery, getPath, readBody, sendJson, sendRaw } from './http-utils.js';
+import { parseQuery, getPath, readBody, parseBody, sendJson, sendRaw } from './http-utils.js';
 import { handleControlRoute, type InternalEndpoint } from './control-routes.js';
 import { validateConfig, formatErrors } from './config-validator.js';
 import { createDataFileWatcher } from './data-file-watcher.js';
@@ -444,6 +444,10 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     if (!proxyTarget) return null;
     const targetUrl = proxyTarget + url;
     const fetchHeaders: Record<string, string> = {};
+    // Body shape: Buffer = forward as-is (preserve exact bytes); string = forward as-is;
+    // anything else (object/null/undefined) = legacy path, JSON-stringify.
+    const isBuffer = Buffer.isBuffer(body);
+    const isString = typeof body === 'string';
     // Drop proxy-injected headers (frontend dev-servers add x-forwarded-* /
     // forwarded / via when proxying to mockr) so upstream access logs don't
     // see the hop. Origin/Referer are rewritten below — must drop incoming
@@ -480,7 +484,18 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     fetchHeaders['origin'] = `${target.protocol}//${target.host}`;
     fetchHeaders['referer'] = `${target.protocol}//${target.host}${url}`;
     const fetchOpts: RequestInit = { method, headers: fetchHeaders, redirect: 'manual' };
-    if (body && method !== 'GET' && method !== 'HEAD') fetchOpts.body = JSON.stringify(body);
+    if (method !== 'GET' && method !== 'HEAD') {
+      if (isBuffer) {
+        if ((body as Buffer).length > 0) fetchOpts.body = new Uint8Array(body as Buffer);
+      } else if (isString) {
+        if ((body as string).length > 0) fetchOpts.body = body as string;
+      } else if (body !== undefined && body !== null) {
+        fetchOpts.body = JSON.stringify(body);
+        if (!Object.keys(fetchHeaders).some((k) => k.toLowerCase() === 'content-type')) {
+          fetchHeaders['content-type'] = 'application/json';
+        }
+      }
+    }
 
     const res = await fetch(targetUrl, fetchOpts);
     const resHeaders: Record<string, string | string[]> = {};
@@ -513,9 +528,11 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     const fullUrl = req.url || '/';
     const path = getPath(fullUrl);
     const query = parseQuery(fullUrl);
-    const body = await readBody(req);
+    const rawBody = await readBody(req);
     const reqHeaders: Record<string, string | string[] | undefined> = {};
     for (const [k, v] of Object.entries(req.headers)) reqHeaders[k] = v;
+    const reqContentType = typeof reqHeaders['content-type'] === 'string' ? (reqHeaders['content-type'] as string) : undefined;
+    const body = parseBody(rawBody, reqContentType);
 
     const fakeReq: MockrRequest = { method, path, params: {}, query, headers: reqHeaders, body };
 
@@ -540,7 +557,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
           if (lk === 'content-length' || lk === 'transfer-encoding' || lk === 'connection') continue;
           fwdHeaders[k] = v;
         }
-        const fwdBody = patch && 'body' in patch ? patch.body : body;
+        const fwdBody = patch && 'body' in patch ? patch.body : rawBody;
 
         // Mem-session lookup BEFORE fetch — replay returns cached upstream
         // response so handler mutation runs fresh on a clone (cache stays clean).
@@ -719,7 +736,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
 
     // 3. Try proxy
     if (!handlerResult && config.proxy && proxyEnabled) {
-      handlerResult = await handleProxy(method, fullUrl, reqHeaders, body);
+      handlerResult = await handleProxy(method, fullUrl, reqHeaders, rawBody);
       if (handlerResult) {
         source = 'proxy';
         const ctHeader = handlerResult.headers && handlerResult.headers['content-type'];

@@ -23,21 +23,36 @@ export function getPath(url: string): string {
   return idx === -1 ? url : url.slice(0, idx);
 }
 
-export async function readBody(req: IncomingMessage): Promise<unknown> {
+export async function readBody(req: IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Uint8Array[] = [];
     req.on('data', (chunk) => chunks.push(chunk));
-    req.on('end', () => {
-      const raw = Buffer.concat(chunks).toString('utf-8');
-      if (!raw) return resolve(undefined);
-      try {
-        resolve(JSON.parse(raw));
-      } catch {
-        resolve(raw);
-      }
-    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
+}
+
+export function parseBody(raw: Buffer, contentType: string | undefined): unknown {
+  if (raw.length === 0) return undefined;
+  const ct = (contentType || '').toLowerCase();
+  const text = raw.toString('utf-8');
+  if (ct.includes('application/json') || ct.includes('+json')) {
+    try { return JSON.parse(text); } catch { return text; }
+  }
+  if (ct.includes('application/x-www-form-urlencoded')) {
+    const params = new URLSearchParams(text);
+    const obj: Record<string, string | string[]> = {};
+    for (const [k, v] of params) {
+      const existing = obj[k];
+      if (existing === undefined) obj[k] = v;
+      else if (Array.isArray(existing)) existing.push(v);
+      else obj[k] = [existing, v];
+    }
+    return obj;
+  }
+  // Default: try JSON parse for back-compat (mockr previously sniffed all bodies),
+  // fall back to raw string. Binary content-types should be inspected via raw Buffer.
+  try { return JSON.parse(text); } catch { return text; }
 }
 
 function applyHeaders(res: ServerResponse, headers: Record<string, string | string[]>) {
