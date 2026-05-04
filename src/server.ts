@@ -450,6 +450,15 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     // localhost values first or CSRF/origin checks reject the request.
     const stripReq = new Set([
       'host',
+      'connection',
+      'keep-alive',
+      'transfer-encoding',
+      'content-length',
+      'te',
+      'trailer',
+      'upgrade',
+      'proxy-authenticate',
+      'proxy-authorization',
       'forwarded',
       'via',
       'x-forwarded-for',
