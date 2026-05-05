@@ -13,7 +13,34 @@
 // Plus a cross-endpoint HTTP trigger that broadcasts a server-pushed event
 // to every connected client (mirrors a real backend pushing live updates).
 
-import { mockr, ws, handler, type WsEndpoint } from '../../src/index.js';
+import { mockr, ws, handler, type WsEndpoint, type Middleware } from '../../src/index.js';
+
+// Permissive CORS for local browser demos — page served from `python3 -m http.server`
+// on a different port than mockr. Drop in production / real backend mocks.
+const cors: Middleware = {
+  name: 'cors',
+  pre(req) {
+    if (req.method === 'OPTIONS') {
+      return {
+        status: 204,
+        body: '',
+        headers: {
+          'Access-Control-Allow-Origin': (req.headers.origin as string | undefined) ?? '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': '*',
+          'Access-Control-Max-Age': '86400',
+        },
+      };
+    }
+  },
+  post(req, res) {
+    const origin = (req.headers.origin as string | undefined) ?? '*';
+    return {
+      ...res,
+      headers: { ...(res.headers ?? {}), 'Access-Control-Allow-Origin': origin },
+    } as typeof res;
+  },
+};
 
 type ClientEvent =
   | { type: 'message'; content: string }
@@ -43,6 +70,7 @@ interface ConnState {
 
 mockr<Endpoints>({
   port: 3011,
+  middleware: [cors],
   endpoints: [
     {
       url: '/ws/agent',
