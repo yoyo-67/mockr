@@ -60,11 +60,24 @@ mockr({
 
 ## Try it
 
-```http
-POST http://localhost:3004/api/orders                         { "user_id": "u1", "total": 99 }
-POST http://localhost:3004/api/orders                         { "user_id": "u1", "total": -1 }   # 400
-GET  http://localhost:3004/api/users/u1/orders?status=shipped&limit=5
-GET  http://localhost:3004/api/users/u1/orders?status=garbage                                    # 400
+[**Open in StackBlitz →**](https://stackblitz.com/github/yoyo-67/mockr?file=examples/04-handlers-zod/server.ts) — paste each `curl` into the StackBlitz Terminal once `npx tsx examples/04-handlers-zod/server.ts` is running.
+
+```bash
+# valid body — 201
+curl -s -X POST http://localhost:3004/api/orders \
+  -H 'Content-Type: application/json' \
+  -d '{"user_id":"u1","total":99}'
+
+# invalid body (negative total) — 400 + zod issue list
+curl -s -X POST http://localhost:3004/api/orders \
+  -H 'Content-Type: application/json' \
+  -d '{"user_id":"u1","total":-1}' -i
+
+# valid query + params
+curl -s 'http://localhost:3004/api/users/u1/orders?status=shipped&limit=5'
+
+# invalid query (bad enum) — 400
+curl -s 'http://localhost:3004/api/users/u1/orders?status=garbage' -i
 ```
 
 ## What's next

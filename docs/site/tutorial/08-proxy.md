@@ -42,11 +42,16 @@ mockr({
 
 ## Try it
 
-```http
-GET http://localhost:3008/api/feature-flags    # mocked
-GET http://localhost:3008/api/users/me         # mocked
-GET http://localhost:3008/posts/1              # proxied → jsonplaceholder
-GET http://localhost:3008/posts?userId=1       # proxied with query string
+[**Open in StackBlitz →**](https://stackblitz.com/github/yoyo-67/mockr?file=examples/08-proxy/server.ts) — paste each `curl` into the StackBlitz Terminal once `npx tsx examples/08-proxy/server.ts` is running.
+
+```bash
+# mocked
+curl -s http://localhost:3008/api/feature-flags
+curl -s http://localhost:3008/api/users/me
+
+# proxied — passthrough to jsonplaceholder
+curl -s http://localhost:3008/posts/1
+curl -s 'http://localhost:3008/posts?userId=1'
 ```
 
 The console tags each line:

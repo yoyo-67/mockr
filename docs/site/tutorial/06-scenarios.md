@@ -56,12 +56,28 @@ mockr<Endpoints>({
 
 ## Try it
 
-```http
-GET  http://localhost:3006/api/users                          # default state
-POST http://localhost:3006/__mockr/scenario   { "name": "empty" }
-GET  http://localhost:3006/api/users                          # []
-POST http://localhost:3006/__mockr/scenario   { "name": "down" }
-GET  http://localhost:3006/api/users                          # 503
+[**Open in StackBlitz →**](https://stackblitz.com/github/yoyo-67/mockr?file=examples/06-scenarios/server.ts) — paste each `curl` into the StackBlitz Terminal once `npx tsx examples/06-scenarios/server.ts` is running.
+
+```bash
+# default — Alice + Bob
+curl -s http://localhost:3006/api/users
+
+# switch to "empty"
+curl -s -X POST http://localhost:3006/__mockr/scenario \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"empty"}'
+curl -s http://localhost:3006/api/users    # []
+
+# switch to "down" — endpoint returns 503
+curl -s -X POST http://localhost:3006/__mockr/scenario \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"down"}'
+curl -s http://localhost:3006/api/users -i
+
+# back to baseline
+curl -s -X POST http://localhost:3006/__mockr/scenario \
+  -H 'Content-Type: application/json' \
+  -d '{"name":null}'
 ```
 
 ## What's next

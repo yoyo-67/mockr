@@ -37,6 +37,43 @@ npx tsx server.ts
 
 `requests.http` in the same folder lists the operations to try in order.
 
+## Try it
+
+[**Open in StackBlitz →**](https://stackblitz.com/github/yoyo-67/mockr?file=examples/10-everything/server.ts) — paste each `curl` into the StackBlitz Terminal once `npx tsx examples/10-everything/server.ts` is running.
+
+```bash
+# list rooms
+curl -s http://localhost:3010/api/rooms
+curl -s 'http://localhost:3010/api/rooms?private=true'
+
+# messages for a room
+curl -s http://localhost:3010/api/rooms/1/messages
+
+# send a message
+curl -s -X POST http://localhost:3010/api/rooms/1/messages \
+  -H 'Content-Type: application/json' \
+  -d '{"author":"alice","text":"hello world"}'
+
+# search across all rooms
+curl -s 'http://localhost:3010/api/search?q=hello'
+
+# aggregate stats
+curl -s http://localhost:3010/api/stats
+
+# scenarios
+curl -s -X POST http://localhost:3010/__mockr/scenario \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"busy"}'
+curl -s http://localhost:3010/api/stats
+
+curl -s -X POST http://localhost:3010/__mockr/scenario \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"empty"}'
+curl -s http://localhost:3010/api/stats
+```
+
+About 5% of requests randomly return `500` (errorInjection middleware). Re-run if you hit one — that's the demo.
+
 ## Where next
 
 - README in the repo for the full API reference.

@@ -47,11 +47,24 @@ mockr<Endpoints>({
 
 ## Try it
 
-```http
-GET    http://localhost:3001/api/todos
-POST   http://localhost:3001/api/todos          { "title": "New", "done": false }
-PATCH  http://localhost:3001/api/todos/1        { "done": true }
-DELETE http://localhost:3001/api/todos/1
+[**Open in StackBlitz →**](https://stackblitz.com/github/yoyo-67/mockr?file=examples/01-data-list/server.ts) — paste each `curl` into the StackBlitz Terminal once `npx tsx examples/01-data-list/server.ts` is running.
+
+```bash
+# list
+curl -s http://localhost:3001/api/todos
+
+# insert (auto-generated id)
+curl -s -X POST http://localhost:3001/api/todos \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"New","done":false}'
+
+# patch
+curl -s -X PATCH http://localhost:3001/api/todos/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"done":true}'
+
+# delete
+curl -s -X DELETE http://localhost:3001/api/todos/1 -i
 ```
 
 `POST` returns the inserted item with a generated `id`. `PATCH` returns the merged item. `DELETE` returns `204`.

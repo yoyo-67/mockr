@@ -77,6 +77,24 @@ mockr({
 });
 ```
 
+## Try it
+
+[**Open in StackBlitz →**](https://stackblitz.com/github/yoyo-67/mockr?file=examples/09-forward/server.ts) — paste each `curl` into the StackBlitz Terminal once `npx tsx examples/09-forward/server.ts` is running.
+
+```bash
+# pattern 1 — forwarded list, mockr filtered short titles out
+curl -s http://localhost:3009/posts | head -c 200
+
+# pattern 2 — forwarded record, _localTag stitched in
+curl -s http://localhost:3009/todos/1
+
+# pattern 3 — synthetic stub via query flag
+curl -s 'http://localhost:3009/users/1?stub=1'
+
+# same route without flag — live forward
+curl -s http://localhost:3009/users/1
+```
+
 ## Console tag
 
 Forwarded requests log with a third tag (`mock` / `->` / `fwd`):

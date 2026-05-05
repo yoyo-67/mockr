@@ -67,11 +67,23 @@ mockr({
 
 ## Try it
 
-```http
-GET  http://localhost:3005/api/health                                # 200, no auth
-POST http://localhost:3005/api/login    { "email": "admin@example.com" }
-GET  http://localhost:3005/api/secret   Authorization: Bearer admin-token-123
-GET  http://localhost:3005/api/secret                                # 401
+[**Open in StackBlitz →**](https://stackblitz.com/github/yoyo-67/mockr?file=examples/05-middleware/server.ts) — paste each `curl` into the StackBlitz Terminal once `npx tsx examples/05-middleware/server.ts` is running.
+
+```bash
+# excluded from auth — 200
+curl -s http://localhost:3005/api/health
+
+# get a token
+curl -s -X POST http://localhost:3005/api/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@example.com"}'
+
+# authed — 200, plus x-request-id header
+curl -s http://localhost:3005/api/secret \
+  -H 'Authorization: Bearer admin-token-123' -i
+
+# no token — 401
+curl -s http://localhost:3005/api/secret -i
 ```
 
 ## What's next

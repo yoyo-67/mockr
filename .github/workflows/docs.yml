@@ -34,6 +34,9 @@ jobs:
 
       - run: npm run docs:build
 
+      # Disable Jekyll on Pages so it serves dist/ verbatim instead of trying to render README.md
+      - run: touch docs/site/.vitepress/dist/.nojekyll
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3

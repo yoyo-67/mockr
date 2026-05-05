@@ -59,10 +59,19 @@ mockr<Endpoints>({
 
 ## Try it
 
-```http
-GET  http://localhost:3003/api/cart
-POST http://localhost:3003/api/cart   { "product_id": 1, "quantity": 2 }
-GET  http://localhost:3003/api/cart
+[**Open in StackBlitz →**](https://stackblitz.com/github/yoyo-67/mockr?file=examples/03-cross-endpoint/server.ts) — paste each `curl` into the StackBlitz Terminal once `npx tsx examples/03-cross-endpoint/server.ts` is running.
+
+```bash
+# empty cart
+curl -s http://localhost:3003/api/cart
+
+# add a line — decrements /internal/products stock atomically
+curl -s -X POST http://localhost:3003/api/cart \
+  -H 'Content-Type: application/json' \
+  -d '{"product_id":1,"quantity":2}'
+
+# cart now joined with products + computed total
+curl -s http://localhost:3003/api/cart
 ```
 
 The first GET joins cart × products and computes a total. The POST decrements stock on `/internal/products` and inserts into `/internal/cart` — atomic from the client's perspective.

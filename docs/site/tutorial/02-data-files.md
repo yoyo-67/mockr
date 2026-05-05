@@ -48,10 +48,21 @@ Editing the file resets the endpoint: in-memory mutations (POSTs since the last 
 
 ## Try it
 
-```http
-GET   http://localhost:3002/api/products
-POST  http://localhost:3002/api/products      { "name": "Webcam", "price": 60, "stock": 12 }
-PATCH http://localhost:3002/api/config        { "max_upload_mb": 100 }
+[**Open in StackBlitz →**](https://stackblitz.com/github/yoyo-67/mockr?file=examples/02-data-files/server.ts) — paste each `curl` into the StackBlitz Terminal once `npx tsx examples/02-data-files/server.ts` is running.
+
+```bash
+# list (loaded from products.json)
+curl -s http://localhost:3002/api/products
+
+# insert — persists in memory, dropped on next file edit
+curl -s -X POST http://localhost:3002/api/products \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Webcam","price":60,"stock":12}'
+
+# record endpoint, shallow merge
+curl -s -X PATCH http://localhost:3002/api/config \
+  -H 'Content-Type: application/json' \
+  -d '{"max_upload_mb":100}'
 ```
 
 Now save `products.json` with one item removed — `GET /api/products` reflects it on the next request.

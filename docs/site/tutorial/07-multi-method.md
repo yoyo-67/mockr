@@ -57,11 +57,22 @@ mockr<Endpoints>({
 
 ## Try it
 
-```http
-GET    http://localhost:3007/api/cart
-POST   http://localhost:3007/api/cart    { "product_id": 1, "quantity": 2 }
-DELETE http://localhost:3007/api/cart
-PUT    http://localhost:3007/api/cart                              # 405, Allow: GET, POST, DELETE
+[**Open in StackBlitz →**](https://stackblitz.com/github/yoyo-67/mockr?file=examples/07-multi-method/server.ts) — paste each `curl` into the StackBlitz Terminal once `npx tsx examples/07-multi-method/server.ts` is running.
+
+```bash
+# read cart
+curl -s http://localhost:3007/api/cart
+
+# add line
+curl -s -X POST http://localhost:3007/api/cart \
+  -H 'Content-Type: application/json' \
+  -d '{"product_id":1,"quantity":2}'
+
+# clear
+curl -s -X DELETE http://localhost:3007/api/cart -i
+
+# unsupported verb — 405 + Allow header
+curl -s -X PUT http://localhost:3007/api/cart -i
 ```
 
 ## What's next
