@@ -27,9 +27,9 @@
     "docs:dev": "vitepress dev docs/site",
     "docs:build": "vitepress build docs/site",
     "docs:preview": "vitepress preview docs/site",
-    "release:patch": "npm version patch && npm publish --access public",
-    "release:minor": "npm version minor && npm publish --access public",
-    "release:major": "npm version major && npm publish --access public"
+    "publish:patch": "npm version patch && npm publish --access public && git push --follow-tags",
+    "publish:minor": "npm version minor && npm publish --access public && git push --follow-tags",
+    "publish:major": "npm version major && npm publish --access public && git push --follow-tags"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
