@@ -1,6 +1,6 @@
 {
   "name": "@yoyo-org/mockr",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Endpoints are named data holders. Define a URL, attach data, and get a mock API server.",
   "type": "module",
   "main": "./dist/index.js",
