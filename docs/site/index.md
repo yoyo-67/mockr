@@ -44,6 +44,11 @@ features:
     details: |
       Capture network traffic, map responses to local JSON files, generate
       `.d.ts` types. Replay sessions in-memory for offline dev.
+  - icon: 🛰️
+    title: WebSocket endpoints
+    details: |
+      `ws({ onConnect, onMessage, onClose })` mocks streaming protocols.
+      Cross-endpoint `WsHandle.broadcast` lets HTTP routes push to clients.
 ---
 
 ## Quick start

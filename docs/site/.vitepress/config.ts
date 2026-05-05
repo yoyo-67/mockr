@@ -8,12 +8,14 @@ const stackblitz = (path: string) =>
 export default defineConfig({
   title: 'mockr',
   description: 'Mock API server for frontend prototyping. Define endpoints, get full CRUD for free.',
-  base: '/',
+  base: '/mockr/',
   cleanUrls: true,
   appearance: 'dark',
   themeConfig: {
     nav: [
+      { text: 'Concepts', link: '/concepts' },
       { text: 'Tutorial', link: '/tutorial/' },
+      { text: 'Reference', link: '/reference/' },
       { text: 'GitHub', link: `https://github.com/${REPO}` },
       { text: 'npm', link: 'https://www.npmjs.com/package/@yoyo-org/mockr' },
     ],
@@ -33,6 +35,24 @@ export default defineConfig({
             { text: '08 — proxy passthrough', link: '/tutorial/08-proxy' },
             { text: '09 — ctx.forward()', link: '/tutorial/09-forward' },
             { text: '10 — everything', link: '/tutorial/10-everything' },
+            { text: '11 — websocket', link: '/tutorial/11-ws' },
+          ],
+        },
+      ],
+      '/reference/': [
+        {
+          text: 'Reference',
+          items: [
+            { text: 'Overview', link: '/reference/' },
+            { text: 'Endpoints', link: '/reference/endpoints' },
+            { text: 'Handlers', link: '/reference/handlers' },
+            { text: 'WebSocket', link: '/reference/websocket' },
+            { text: 'Middleware', link: '/reference/middleware' },
+            { text: 'Scenarios', link: '/reference/scenarios' },
+            { text: 'Proxy & forward', link: '/reference/proxy' },
+            { text: 'Recorder', link: '/reference/recorder' },
+            { text: 'CLI', link: '/reference/cli' },
+            { text: 'Config', link: '/reference/config' },
           ],
         },
       ],

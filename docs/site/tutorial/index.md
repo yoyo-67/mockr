@@ -1,6 +1,6 @@
 # Tutorial
 
-Ten short chapters. Each isolates one feature, simplest first. Code in every chapter mirrors a working example in [`examples/`](https://github.com/yoyo-67/mockr/tree/main/examples) — clone the repo or open the chapter live in StackBlitz.
+Eleven short chapters. Each isolates one feature, simplest first. Code in every chapter mirrors a working example in [`examples/`](https://github.com/yoyo-67/mockr/tree/main/examples) — clone the repo or open the chapter live in StackBlitz.
 
 | # | Chapter | Feature |
 |---|---|---|
@@ -14,6 +14,7 @@ Ten short chapters. Each isolates one feature, simplest first. Code in every cha
 | [08](./08-proxy) | Proxy | passthrough to upstream |
 | [09](./09-forward) | `ctx.forward()` | forward + mutate |
 | [10](./10-everything) | Everything | composed showcase |
+| [11](./11-ws) | WebSocket | `ws({...})` + `WsHandle.broadcast` |
 
 ## Setup once
 
