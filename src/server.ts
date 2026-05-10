@@ -686,6 +686,13 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       }) as HandlerContext['forward'],
     };
 
+    // Expose current proxy target so external tooling (dev-server probes,
+    // browser extensions) can discover what mockr is actually forwarding to
+    // without parsing the user's serverMocker config.
+    if (path === '/__mockr/target' && method === 'GET') {
+      return sendJson(res, 200, { target: proxyTarget ?? null });
+    }
+
     // Scenario switching
     if (path === '/__mockr/scenario' && method === 'POST') {
       const reqBody = body as { name?: string } | undefined;
