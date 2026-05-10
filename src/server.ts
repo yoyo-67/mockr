@@ -45,7 +45,13 @@ function warnIfMissingIdKey(url: string, data: unknown, idKey: string): void {
   }
 }
 
-function parseCli(): { tui?: boolean; port?: number; proxy?: string; recorder?: boolean } {
+function parseCli(): {
+  tui?: boolean;
+  port?: number;
+  proxy?: string;
+  target?: string;
+  recorder?: boolean;
+} {
   try {
     const { values } = parseArgs({
       args: process.argv.slice(2),
@@ -53,6 +59,7 @@ function parseCli(): { tui?: boolean; port?: number; proxy?: string; recorder?: 
         tui: { type: 'boolean' },
         port: { type: 'string' },
         proxy: { type: 'string' },
+        target: { type: 'string' },
         recorder: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
       },
@@ -67,6 +74,7 @@ Usage:
 Options:
   --port <number>   Port to listen on (overrides the port in your config)
   --proxy <url>     Proxy unmatched requests to this URL
+  --target <name>   Select a named entry from proxy.targets as the proxy target
   --tui             Enable the terminal UI
   --recorder        Enable the recorder (record & map network traffic)
   --help, -h        Show this help message`);
@@ -76,6 +84,7 @@ Options:
       tui: values.tui as boolean | undefined,
       port: values.port ? Number(values.port) : undefined,
       proxy: values.proxy as string | undefined,
+      target: values.target as string | undefined,
       recorder: values.recorder as boolean | undefined,
     };
   } catch {
@@ -96,6 +105,28 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
   const cli = parseCli();
   if (cli.tui !== undefined) config = { ...config, tui: cli.tui };
   if (cli.port !== undefined) config = { ...config, port: cli.port };
+  if (cli.target !== undefined && cli.proxy !== undefined) {
+    throw new Error(
+      `mockr: --target and --proxy are mutually exclusive. ` +
+        `Pass either --target <name> (resolved against proxy.targets) or --proxy <url>, not both.`,
+    );
+  }
+  if (cli.target !== undefined) {
+    const targets = config.proxy?.targets;
+    if (!targets || Object.keys(targets).length === 0) {
+      throw new Error(
+        `mockr: --target ${cli.target} requires proxy.targets in your mockr config. ` +
+          `Add a \`proxy: { targets: { ${cli.target}: 'https://...' } }\` block.`,
+      );
+    }
+    if (!(cli.target in targets)) {
+      const valid = Object.keys(targets).join(', ');
+      throw new Error(
+        `mockr: --target ${cli.target} is not a known proxy target. Valid targets: ${valid}.`,
+      );
+    }
+    config = { ...config, proxy: { ...config.proxy, target: targets[cli.target] } };
+  }
   if (cli.proxy !== undefined) config = { ...config, proxy: { ...config.proxy, target: cli.proxy } };
   if (cli.recorder) config = { ...config, recorder: config.recorder ?? {} };
 
@@ -481,10 +512,15 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     // anything else (object/null/undefined) = legacy path, JSON-stringify.
     const isBuffer = Buffer.isBuffer(body);
     const isString = typeof body === 'string';
-    // Drop proxy-injected headers (frontend dev-servers add x-forwarded-* /
-    // forwarded / via when proxying to mockr) so upstream access logs don't
-    // see the hop. Origin/Referer are rewritten below — must drop incoming
-    // localhost values first or CSRF/origin checks reject the request.
+    // Drop hop-by-hop headers and proxy-internal trace headers (forwarded, via,
+    // x-forwarded-for, x-real-ip) so upstream access logs don't see the hop.
+    // KEEP x-forwarded-host / x-forwarded-proto / x-forwarded-port — Django
+    // (USE_X_FORWARDED_HOST), Rails, etc. read these to build redirect_uri /
+    // absolute URLs pointing back at the original client (browser on
+    // localhost:3000), which is required for OAuth / SSO callbacks to come
+    // back through the dev proxy chain instead of going direct to upstream.
+    // Origin/Referer are rewritten below — must drop incoming localhost values
+    // first or CSRF/origin checks reject the request.
     const stripReq = new Set([
       'host',
       'connection',
@@ -499,9 +535,6 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       'forwarded',
       'via',
       'x-forwarded-for',
-      'x-forwarded-host',
-      'x-forwarded-port',
-      'x-forwarded-proto',
       'x-forwarded-server',
       'x-real-ip',
       'origin',
@@ -510,12 +543,22 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     for (const [k, v] of Object.entries(headers)) {
       if (v && !stripReq.has(k.toLowerCase())) fetchHeaders[k] = Array.isArray(v) ? v.join(', ') : v;
     }
-    // Rewrite Origin + Referer to upstream so server-side CSRF checks
-    // (Django's CSRF_TRUSTED_ORIGINS, Rails authenticity_token, etc.) see the
-    // request as same-origin instead of rejecting localhost:3000.
+    // Rewrite Origin + Referer so server-side CSRF checks pass.
+    // When upstream uses USE_X_FORWARDED_HOST (Django) / TrustProxy (Rails)
+    // it computes get_host() from X-Forwarded-Host, and CSRF expects Origin
+    // to match THAT host — not the proxy target. So if X-Forwarded-Host is
+    // present (devServer added it), align Origin/Referer with the forwarded
+    // host. Otherwise fall back to upstream target — matches plain Host.
+    // Host = X-Forwarded-Host when present (browser's host), else upstream.
+    // Scheme = upstream's scheme — Django/Rails behind nginx-uwsgi terminate
+    // TLS at the edge and force is_secure()=https via SECURE_PROXY_SSL_HEADER,
+    // so CSRF expects origin scheme to match upstream's, not the dev http.
+    const xfHostRaw = headers['x-forwarded-host'];
+    const xfHost = Array.isArray(xfHostRaw) ? xfHostRaw[0] : xfHostRaw;
     const target = new URL(proxyTarget);
-    fetchHeaders['origin'] = `${target.protocol}//${target.host}`;
-    fetchHeaders['referer'] = `${target.protocol}//${target.host}${url}`;
+    const originHost = (typeof xfHost === 'string' && xfHost) || target.host;
+    fetchHeaders['origin'] = `${target.protocol}//${originHost}`;
+    fetchHeaders['referer'] = `${target.protocol}//${originHost}${url}`;
     const fetchOpts: RequestInit = { method, headers: fetchHeaders, redirect: 'manual' };
     if (method !== 'GET' && method !== 'HEAD') {
       if (isBuffer) {
@@ -542,7 +585,25 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       );
     }
 
-    if (res.status >= 300 && res.status < 400) return { status: res.status, body: '', headers: resHeaders };
+    if (res.status >= 300 && res.status < 400) {
+      // Rewrite same-origin absolute Location to relative so browser stays in
+      // the proxy chain (else cookies set on localhost are lost when the
+      // browser navigates directly to upstream — breaks OAuth/SSO flows).
+      // External Location (e.g. auth0) is left untouched.
+      const loc = resHeaders['location'];
+      if (typeof loc === 'string') {
+        try {
+          const u = new URL(loc);
+          const t = new URL(proxyTarget);
+          if (u.origin.toLowerCase() === t.origin.toLowerCase()) {
+            resHeaders['location'] = u.pathname + u.search + u.hash;
+          }
+        } catch {
+          // Relative Location — already same-origin from browser's POV. No-op.
+        }
+      }
+      return { status: res.status, body: '', headers: resHeaders };
+    }
 
     const resBody = await res.text();
     const ctRaw = resHeaders['content-type'];

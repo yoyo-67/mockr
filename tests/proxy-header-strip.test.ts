@@ -63,15 +63,19 @@ describe('Proxy header stripping', () => {
 
     const h = backend.lastHeaders();
     expect(h['x-forwarded-for']).toBeUndefined();
-    expect(h['x-forwarded-host']).toBeUndefined();
-    expect(h['x-forwarded-port']).toBeUndefined();
-    expect(h['x-forwarded-proto']).toBeUndefined();
     expect(h['x-forwarded-server']).toBeUndefined();
     expect(h['x-real-ip']).toBeUndefined();
     expect(h['forwarded']).toBeUndefined();
     expect(h['via']).toBeUndefined();
-    // referer rewritten (not stripped) — must NOT be the leaked localhost value.
-    expect(h['referer']).not.toContain('localhost:3000');
+    // x-forwarded-host/proto/port preserved so upstream frameworks (Django
+    // USE_X_FORWARDED_HOST etc.) can build redirect_uri pointing at original
+    // client — required for OAuth/SSO callbacks to return through dev proxy.
+    expect(h['x-forwarded-host']).toBe('localhost:3000');
+    expect(h['x-forwarded-port']).toBe('3000');
+    expect(h['x-forwarded-proto']).toBe('http');
+    // referer aligned with x-forwarded-host (so Django CSRF expecting
+    // origin = forwarded host accepts the request).
+    expect(h['referer']).toBe('http://localhost:3000/api/whoami');
     // Non-hop headers must still pass through.
     expect(h['x-custom']).toBe('should-pass');
   });
