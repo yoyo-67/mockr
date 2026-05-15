@@ -10,6 +10,7 @@ import type {
   Middleware,
   HandlerContext,
   ParseableSchema,
+  EndpointDelay,
 } from './types.js';
 import type { EndpointHandle } from './endpoint-handle.js';
 import { createListHandle } from './list-handle.js';
@@ -24,7 +25,7 @@ import { createRecorder, type Recorder } from './recorder.js';
 import { createMemorySessionStore, type MemorySessionStore } from './memory-session.js';
 import { parseQuery, getPath, readBody, parseBody, sendJson, sendRaw } from './http-utils.js';
 import { handleControlRoute, type InternalEndpoint } from './control-routes.js';
-import { validateConfig, formatErrors } from './config-validator.js';
+import { validateConfig, formatErrors, checkDelayValue } from './config-validator.js';
 import { createDataFileWatcher } from './data-file-watcher.js';
 
 /**
@@ -241,6 +242,10 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       warnIfMissingIdKey(urlStr, def.data, key);
       const ep = pushDataEndpoint(def.url, matcher, def.method, def.data, key);
       if (def.methods) ep.methods = def.methods as InternalEndpoint['methods'];
+      if ('delay' in def && def.delay !== undefined) {
+        ep.delay = def.delay;
+        ep.baselineDelay = def.delay;
+      }
     } else if ('dataFile' in def && def.dataFile !== undefined) {
       // Load initial data once, then keep it in memory. A file watcher
       // refreshes the handle's data when the JSON file changes on disk
@@ -256,6 +261,10 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       const ep = pushDataEndpoint(def.url, matcher, def.method, fileData, key, filePath);
       ep.filePath = filePath;
       if (def.methods) ep.methods = def.methods as InternalEndpoint['methods'];
+      if ('delay' in def && def.delay !== undefined) {
+        ep.delay = def.delay;
+        ep.baselineDelay = def.delay;
+      }
 
       // Hot-reload: update handle when the file changes.
       dataFileWatcher.register(filePath, (newData: unknown) => {
@@ -281,7 +290,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       const schemas: InternalEndpoint['schemas'] = isSpec
         ? { body: h.body, query: h.query, params: h.params }
         : null;
-      endpoints.push({
+      const handlerEp: InternalEndpoint = {
         url: def.url,
         method: def.method,
         matcher,
@@ -296,7 +305,12 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
         handlerFn,
         schemas,
         disabled: false,
-      });
+      };
+      if ('delay' in def && def.delay !== undefined) {
+        handlerEp.delay = def.delay;
+        handlerEp.baselineDelay = def.delay;
+      }
+      endpoints.push(handlerEp);
     } else if ('ws' in def && def.ws !== undefined) {
       // WebSocket endpoint. The HTTP request path is never invoked for these —
       // dispatch happens through the `upgrade` event on the http server below.
@@ -322,7 +336,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     } else if ('methods' in def && def.methods !== undefined) {
       // Standalone `methods` form — no data store, all verbs explicit. Per-verb
       // dispatch happens in the request handler via `ep.methods`.
-      endpoints.push({
+      const methodsEp: InternalEndpoint = {
         url: def.url,
         matcher,
         listHandle: null,
@@ -337,19 +351,61 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
         schemas: null,
         disabled: false,
         methods: def.methods as InternalEndpoint['methods'],
-      });
+      };
+      if ('delay' in def && def.delay !== undefined) {
+        methodsEp.delay = def.delay;
+        methodsEp.baselineDelay = def.delay;
+      }
+      endpoints.push(methodsEp);
     }
     // No `body` / `response` shorthand — use `data: T` (record) for static
     // payloads, or `handler` for custom status/headers.
     void urlStr;
   }
 
+  /**
+   * Apply a Proxy that exposes `setDelay` / `delay` on top of any base handle.
+   * The Proxy intercepts those two property names and delegates everything
+   * else to the base — preserving the original handle's full surface
+   * (`.data`, `.findById`, `.set`, etc.) while adding runtime delay control.
+   */
+  function wrapWithDelayControl<H extends object>(ep: InternalEndpoint, base: H): H {
+    return new Proxy(base, {
+      get(target, prop, receiver) {
+        if (prop === 'setDelay') {
+          return (value: EndpointDelay | null) => mutateEndpointDelay(ep, value);
+        }
+        if (prop === 'delay') {
+          return ep.delay ?? null;
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+      has(target, prop) {
+        if (prop === 'setDelay' || prop === 'delay') return true;
+        return Reflect.has(target, prop);
+      },
+    });
+  }
+
+  function mutateEndpointDelay(ep: InternalEndpoint, value: EndpointDelay | null): void {
+    if (ep.wsRuntime) {
+      throw new Error("'delay' is not allowed on WS endpoints");
+    }
+    if (value === null) {
+      ep.delay = undefined;
+      return;
+    }
+    const err = checkDelayValue(value);
+    if (err) throw new Error(err);
+    ep.delay = value;
+  }
+
   /** Pick the right kind of public handle for an endpoint. */
   function getEndpointHandleFor(ep: InternalEndpoint): EndpointHandle<unknown> | null {
-    if (ep.wsRuntime) return ep.wsRuntime.handle as unknown as EndpointHandle<unknown>;
-    if (ep.listHandle) return ep.listHandle as unknown as EndpointHandle<unknown>;
+    if (ep.wsRuntime) return wrapWithDelayControl(ep, ep.wsRuntime.handle as object) as unknown as EndpointHandle<unknown>;
+    if (ep.listHandle) return wrapWithDelayControl(ep, ep.listHandle as object) as unknown as EndpointHandle<unknown>;
     const rec = recordHandles.get(ep);
-    if (rec) return rec as unknown as EndpointHandle<unknown>;
+    if (rec) return wrapWithDelayControl(ep, rec as object) as unknown as EndpointHandle<unknown>;
     return null;
   }
 
@@ -415,6 +471,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       const rec = recordHandles.get(ep);
       if (rec) rec.reset();
       ep.activeHandler = ep.handlerFn;
+      ep.delay = ep.baselineDelay;
     }
     const scenarioFn = scenarios[name] as ((s: { endpoint: (url: string) => unknown }) => void) | undefined;
     if (scenarioFn) {
@@ -711,12 +768,51 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       if (handled) return;
     }
 
-    // Pre-middleware
+    // Pre-scan for route-level delay so we can:
+    //   (a) skip any global `delay`-named middleware (route wins, never additive)
+    //   (b) apply the delay AFTER global pre middleware but BEFORE dispatch
+    // Matches the same logic the dispatch loop uses (URL/method/methods-verb
+    // gating). Only enabled, non-WS endpoints participate — disabled endpoints
+    // fall through to proxy with no artificial wait per ADR-0001.
+    let matchedDelay: import('./types.js').EndpointDelay | undefined;
+    for (const ep of endpoints) {
+      if (ep.disabled) continue;
+      if (ep.wsRuntime) continue;
+      if (ep.delay === undefined) continue;
+      const routeMatch = ep.matcher(path);
+      const epUrlStr = typeof ep.url === 'string' ? ep.url : null;
+      const urlMatches =
+        routeMatch !== null ||
+        (epUrlStr !== null && (path === epUrlStr || path.startsWith(epUrlStr + '/')));
+      if (!urlMatches) continue;
+      if (ep.methods) {
+        if (!ep.methods[method] && !ep.isData) continue;
+      } else if (ep.method && ep.method.toUpperCase() !== method) {
+        continue;
+      }
+      matchedDelay = ep.delay;
+      break;
+    }
+
+    // Pre-middleware (skip global `delay`-named middleware when route-level
+    // delay applies — per-route wins, never additive)
     for (const mw of middlewares) {
       if (mw.pre) {
+        if (matchedDelay !== undefined && mw.name === 'delay') continue;
         const result = await mw.pre(fakeReq);
         if (result && 'body' in result) return sendJson(res, result.status || 200, result.body, result.headers);
       }
+    }
+
+    // Apply route-level delay
+    let appliedDelayMs: number | null = null;
+    if (matchedDelay !== undefined) {
+      const ms = typeof matchedDelay === 'number'
+        ? matchedDelay
+        : matchedDelay.min + Math.random() * (matchedDelay.max - matchedDelay.min);
+      const rounded = Math.round(ms);
+      if (rounded > 0) await new Promise((r) => setTimeout(r, rounded));
+      appliedDelayMs = rounded;
     }
 
     let handlerResult: HandlerResult | null = null;
@@ -877,6 +973,13 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     const tag = source === 'mock' ? 'mock' : source === 'proxy' ? '  ->' : source === 'fwd' ? ' fwd' : ' 404';
     console.log(`  ${tag}  ${method.padEnd(6)} ${status} ${fullUrl} ${ms}ms`);
 
+    // Stamp `X-Mockr-Delay` on every response that fired a route-level delay
+    // (including delay: 0 — informative for "is it me, or mockr?" debugging).
+    if (appliedDelayMs !== null) {
+      const existing = handlerResult.headers || {};
+      handlerResult = { ...handlerResult, headers: { ...existing, 'X-Mockr-Delay': String(appliedDelayMs) } } as HandlerResult;
+    }
+
     if ('raw' in handlerResult && handlerResult.raw) {
       sendRaw(res, status, handlerResult.body as string | Buffer, handlerResult.headers);
     } else if (cachedHit && cachedHit.bodyText !== undefined) {
@@ -884,6 +987,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       const headers: Record<string, string | string[]> = {
         'Content-Type': cachedHit.contentType || 'application/json',
         ...cachedHit.headers,
+        ...(appliedDelayMs !== null ? { 'X-Mockr-Delay': String(appliedDelayMs) } : {}),
       };
       sendRaw(res, status, cachedHit.bodyText, headers);
     } else {
@@ -944,6 +1048,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
             const rec = recordHandles.get(ep);
             if (rec) rec.reset();
             ep.activeHandler = ep.handlerFn;
+            ep.delay = ep.baselineDelay;
           }
         },
         async save(savePath: string) {
@@ -998,6 +1103,12 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
         },
         enableAll() { for (const ep of endpoints) ep.disabled = false; },
         disableAll() { for (const ep of endpoints) ep.disabled = true; },
+
+        setEndpointDelay(epUrl: string, value: EndpointDelay | null) {
+          const ep = findEndpointByUrl(epUrl);
+          if (!ep) throw new Error(`Endpoint not found: ${epUrl}`);
+          mutateEndpointDelay(ep, value);
+        },
 
         // Proxy control
         enableProxy() { proxyEnabled = true; },

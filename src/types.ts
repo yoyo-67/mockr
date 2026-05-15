@@ -80,6 +80,14 @@ export type MethodMap<_TEndpoints = unknown> = Partial<
   Record<HttpVerb, HandlerSpec<any, any, any, any>>
 >;
 
+/**
+ * Per-endpoint delay applied before the handler runs (post-global-`pre`
+ * middleware). `number` = fixed ms. `{ min, max }` = uniform jitter window.
+ * Overrides any global `delay()` middleware for the matched route. WS
+ * endpoints reject this field — see ADR-0001.
+ */
+export type EndpointDelay = number | { min: number; max: number };
+
 export type EndpointDef<TEndpoints = Record<string, unknown>> =
   | {
       url: string | RegExp;
@@ -87,6 +95,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       data: unknown;
       idKey?: string;
       methods?: MethodMap<TEndpoints>;
+      delay?: EndpointDelay;
       dataFile?: never;
       handler?: never;
       body?: never;
@@ -99,6 +108,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       dataFile: FileRef<unknown> | string;
       idKey?: string;
       methods?: MethodMap<TEndpoints>;
+      delay?: EndpointDelay;
       data?: never;
       handler?: never;
       body?: never;
@@ -116,6 +126,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       handler:
         | BivariantHandler<TEndpoints>
         | HandlerSpec<any, any, any, TEndpoints>;
+      delay?: EndpointDelay;
       data?: never;
       dataFile?: never;
       body?: never;
@@ -126,6 +137,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
   | {
       url: string | RegExp;
       methods: MethodMap<TEndpoints>;
+      delay?: EndpointDelay;
       method?: never;
       data?: never;
       dataFile?: never;
@@ -138,6 +150,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
   | {
       url: string | RegExp;
       ws: WsSpec<any, any, any>;
+      delay?: never;
       method?: never;
       data?: never;
       dataFile?: never;
@@ -230,6 +243,13 @@ export interface MockrServer<TEndpoints = Record<string, unknown>> {
 
   // Port control
   setPort(port: number): Promise<void>;
+
+  /**
+   * Set or clear a per-route delay at runtime. Universal API — works on every
+   * endpoint kind (data, dataFile, handler, methods). `null` clears the
+   * override. Throws synchronously on invalid input. See ADR-0001.
+   */
+  setEndpointDelay(url: string, value: EndpointDelay | null): void;
 
   // Scenario info
   listScenarios(): string[];

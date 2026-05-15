@@ -131,6 +131,99 @@ describe('validateConfig', () => {
     expect(result.errors[0].message).toContain("'dataFile' must be");
   });
 
+  describe('delay field', () => {
+    it('accepts delay: 0 (explicit no-delay)', () => {
+      const result = validateConfig({
+        endpoints: [{ url: '/api/x', data: [], delay: 0 }],
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts fixed-ms delay', () => {
+      const result = validateConfig({
+        endpoints: [{ url: '/api/x', data: [], delay: 500 }],
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts {min, max} window', () => {
+      const result = validateConfig({
+        endpoints: [{ url: '/api/x', data: [], delay: { min: 100, max: 800 } }],
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts {min, max} where min === max', () => {
+      const result = validateConfig({
+        endpoints: [{ url: '/api/x', data: [], delay: { min: 200, max: 200 } }],
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects negative fixed delay', () => {
+      const result = validateConfig({
+        endpoints: [{ url: '/api/x', data: [], delay: -100 } as any],
+      });
+      expect(result.valid).toBe(false);
+      if (result.valid) return;
+      expect(result.errors[0].message).toMatch(/delay must be >= 0/);
+    });
+
+    it('rejects NaN fixed delay', () => {
+      const result = validateConfig({
+        endpoints: [{ url: '/api/x', data: [], delay: NaN } as any],
+      });
+      expect(result.valid).toBe(false);
+      if (result.valid) return;
+      expect(result.errors[0].message).toMatch(/delay must be a finite number/);
+    });
+
+    it('rejects min > max', () => {
+      const result = validateConfig({
+        endpoints: [{ url: '/api/x', data: [], delay: { min: 500, max: 100 } } as any],
+      });
+      expect(result.valid).toBe(false);
+      if (result.valid) return;
+      expect(result.errors[0].message).toMatch(/delay\.min .* <= delay\.max/);
+    });
+
+    it('rejects negative min', () => {
+      const result = validateConfig({
+        endpoints: [{ url: '/api/x', data: [], delay: { min: -50, max: 100 } } as any],
+      });
+      expect(result.valid).toBe(false);
+      if (result.valid) return;
+      expect(result.errors[0].message).toMatch(/delay\.min must be >= 0/);
+    });
+
+    it('rejects {min} without max', () => {
+      const result = validateConfig({
+        endpoints: [{ url: '/api/x', data: [], delay: { min: 100 } } as any],
+      });
+      expect(result.valid).toBe(false);
+      if (result.valid) return;
+      expect(result.errors[0].message).toMatch(/delay requires both 'min' and 'max'/);
+    });
+
+    it('rejects string delay value', () => {
+      const result = validateConfig({
+        endpoints: [{ url: '/api/x', data: [], delay: 'fast' } as any],
+      });
+      expect(result.valid).toBe(false);
+      if (result.valid) return;
+      expect(result.errors[0].message).toMatch(/delay must be a number or \{ min, max \}/);
+    });
+
+    it('rejects {ms} object shorthand on endpoint (only number or {min,max})', () => {
+      const result = validateConfig({
+        endpoints: [{ url: '/api/x', data: [], delay: { ms: 500 } } as any],
+      });
+      expect(result.valid).toBe(false);
+      if (result.valid) return;
+      expect(result.errors[0].message).toMatch(/delay must be a number or \{ min, max \}/);
+    });
+  });
+
   it('aggregates multiple errors across endpoints', () => {
     const result = validateConfig({
       endpoints: [

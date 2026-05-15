@@ -12,7 +12,59 @@ const KNOWN_KEYS = new Set([
   'methods',
   'idKey',
   'ws',
+  'delay',
 ]);
+
+/**
+ * Pure check for a `delay` value. Returns the first error message, or `null`
+ * if the value is acceptable. Used by both boot-time config validation and
+ * runtime `setDelay()` so the rules stay in lockstep.
+ */
+export function checkDelayValue(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return 'delay must be a finite number';
+    if (value < 0) return `delay must be >= 0 (got ${value})`;
+    return null;
+  }
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj);
+    const hasMin = 'min' in obj;
+    const hasMax = 'max' in obj;
+    const extraKey = keys.find((k) => k !== 'min' && k !== 'max');
+    if (extraKey || (!hasMin && !hasMax)) {
+      return 'delay must be a number or { min, max }';
+    }
+    if (!hasMin || !hasMax) return "delay requires both 'min' and 'max'";
+    const { min, max } = obj as { min: unknown; max: unknown };
+    if (typeof min !== 'number' || !Number.isFinite(min)) {
+      return 'delay.min must be a finite number';
+    }
+    if (typeof max !== 'number' || !Number.isFinite(max)) {
+      return 'delay.max must be a finite number';
+    }
+    if (min < 0) return `delay.min must be >= 0 (got ${min})`;
+    if (max < 0) return `delay.max must be >= 0 (got ${max})`;
+    if (min > max) return `delay.min (${min}) must be <= delay.max (${max})`;
+    return null;
+  }
+  return 'delay must be a number or { min, max }';
+}
+
+function validateDelay(
+  value: unknown,
+  push: (msg: string) => void,
+  hasWs: boolean,
+): void {
+  if (value === undefined) return;
+  if (hasWs) {
+    push("'delay' is not allowed on WS endpoints");
+    return;
+  }
+  const err = checkDelayValue(value);
+  if (err) push(err);
+}
 
 const VALID_VERBS = new Set([
   'GET',
@@ -137,6 +189,11 @@ export function validateConfig(config: MockrConfig<any>): ValidationResult {
       if (typeof f !== 'string' && !isFileRef(f)) {
         push("'dataFile' must be a string path or file<T>('./path')");
       }
+    }
+
+    // Delay validation
+    if ('delay' in def) {
+      validateDelay((def as { delay?: unknown }).delay, push, hasWs);
     }
 
     // Duplicate URL+method

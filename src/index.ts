@@ -9,6 +9,7 @@ export type {
   MockrConfig,
   EndpointHandle,
   EndpointDef,
+  EndpointDelay,
   HandlerContext,
   HandlerResult,
   Middleware,
@@ -16,6 +17,7 @@ export type {
   EndpointInfo,
   ParseableSchema,
 } from './types.js';
+export type { EndpointDelayControl } from './endpoint-handle.js';
 export { handler, isHandlerSpec, HANDLER_SPEC_BRAND } from './handler.js';
 export type { HandlerSpec } from './handler.js';
 export { ws, isWsSpec, WS_SPEC_BRAND } from './ws.js';

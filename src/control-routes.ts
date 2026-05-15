@@ -4,7 +4,7 @@ import { resolve, relative } from 'node:path';
 import type { Recorder } from './recorder.js';
 import type { MemorySessionStore, FilterCategory } from './memory-session.js';
 import type { MatchFn } from './router.js';
-import type { MockrRequest, HandlerResult, HandlerContext, ParseableSchema } from './types.js';
+import type { MockrRequest, HandlerResult, HandlerContext, ParseableSchema, EndpointDelay } from './types.js';
 import type { HandlerSpec } from './handler.js';
 import type { ListHandle } from './list-handle.js';
 import { createListHandle } from './list-handle.js';
@@ -13,6 +13,7 @@ import type { WsRuntime } from './ws-runtime.js';
 import { createMatcher } from './router.js';
 import { generateInterface, urlToFileName, urlToTypeName } from './type-generator.js';
 import { sendCorsJson, handleCorsOptions } from './http-utils.js';
+import { checkDelayValue } from './config-validator.js';
 import { addEndpointToServerFile, removeEndpointFromServerFile, updateUrlInServerFile, changeToHandlerInServerFile } from './server-file-patcher.js';
 
 /** Raw HTTP response shape used by static/legacy code paths. */
@@ -48,6 +49,15 @@ export interface InternalEndpoint {
   filePath?: string;
   /** Per-verb handler overlay; takes precedence over default CRUD/handler dispatch. */
   methods?: Partial<Record<string, HandlerSpec<any, any, any, any>>>;
+  /**
+   * Per-endpoint delay applied before handler dispatch when the endpoint matches.
+   * `undefined` = no override (global `delay()` middleware applies if present);
+   * `EndpointDelay` (including `0`) = explicit value, overrides global delay.
+   * See ADR-0001.
+   */
+  delay?: EndpointDelay;
+  /** Original `delay` declared in the config; used to restore on scenario switch / reset. */
+  baselineDelay?: EndpointDelay;
   /** WebSocket runtime when the endpoint was declared with `ws: ws({...})`. */
   wsRuntime?: WsRuntime;
 }
@@ -92,6 +102,61 @@ export async function handleControlRoute(
   // In-memory replay sessions — always available, independent of disk recorder
   const memSessionRouted = await handleMemSessionRoutes(path, method, body, res, memorySessions);
   if (memSessionRouted) return true;
+
+  // PUT/DELETE /__mockr/endpoints/<encoded-url>/delay — runtime per-route delay
+  // control. Independent of recorder per ADR-0001 (canonical HTTP wrapper for
+  // `server.setEndpointDelay`). Encoded URL = encodeURIComponent of the
+  // endpoint's URL string.
+  if (
+    path.startsWith('/__mockr/endpoints/') &&
+    path.endsWith('/delay') &&
+    (method === 'PUT' || method === 'DELETE')
+  ) {
+    const encoded = path.slice('/__mockr/endpoints/'.length, -'/delay'.length);
+    let targetUrl: string;
+    try {
+      targetUrl = decodeURIComponent(encoded);
+    } catch {
+      sendCorsJson(res, 400, { error: 'Malformed endpoint URL in path' });
+      return true;
+    }
+    const ep = endpoints.find((e) => {
+      const u = typeof e.url === 'string' ? e.url : e.url.source;
+      return u === targetUrl;
+    });
+    if (!ep) {
+      sendCorsJson(res, 404, { error: `Endpoint not found: ${targetUrl}` });
+      return true;
+    }
+    if (ep.wsRuntime) {
+      sendCorsJson(res, 400, { error: "'delay' is not allowed on WS endpoints" });
+      return true;
+    }
+    if (method === 'DELETE') {
+      ep.delay = undefined;
+      sendCorsJson(res, 200, { url: targetUrl, delay: null });
+      return true;
+    }
+    const reqBody = body as { value?: unknown } | null | undefined;
+    if (!reqBody || !('value' in reqBody)) {
+      sendCorsJson(res, 400, { error: 'request body must be { value: number | { min, max } | null }' });
+      return true;
+    }
+    const value = reqBody.value;
+    if (value === null) {
+      ep.delay = undefined;
+      sendCorsJson(res, 200, { url: targetUrl, delay: null });
+      return true;
+    }
+    const err = checkDelayValue(value);
+    if (err) {
+      sendCorsJson(res, 400, { error: err });
+      return true;
+    }
+    ep.delay = value as typeof ep.delay;
+    sendCorsJson(res, 200, { url: targetUrl, delay: value });
+    return true;
+  }
 
   if (!recorder) {
     sendCorsJson(res, 400, { error: 'Recorder not enabled. Use --recorder flag or recorder config option.' });

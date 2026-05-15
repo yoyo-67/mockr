@@ -14,6 +14,8 @@ import type {
   MockrConfig,
   EndpointHandle,
   EndpointDef,
+  EndpointDelay,
+  EndpointDelayControl,
   HandlerContext,
   HandlerResult,
   Middleware,
@@ -63,6 +65,8 @@ describe('public type exports — every documented type resolves', () => {
     expectTypeOf<MockrConfig>().not.toBeNever();
     expectTypeOf<EndpointHandle>().not.toBeNever();
     expectTypeOf<EndpointDef>().not.toBeNever();
+    expectTypeOf<EndpointDelay>().not.toBeNever();
+    expectTypeOf<EndpointDelayControl>().not.toBeNever();
     expectTypeOf<HandlerContext>().not.toBeNever();
     expectTypeOf<HandlerResult>().not.toBeNever();
     expectTypeOf<Middleware>().not.toBeNever();
