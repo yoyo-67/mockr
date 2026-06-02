@@ -27,6 +27,7 @@ export { mockGroup } from './mock-group.js';
 export type { MockGroup, VerbFn, VerbSpec, PathParams, GroupBody, TypedResult } from './mock-group.js';
 export { jsonParam, jsonArrayParam } from './query-params.js';
 export { factory } from './factory.js';
+export { lintEndpoints } from './lint.js';
 export { file, isFileRef, getFilePath, FILE_REF_BRAND } from './file.js';
 export type { FileRef } from './file.js';
 export { createListHandle } from './list-handle.js';

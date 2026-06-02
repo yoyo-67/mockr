@@ -258,6 +258,47 @@ describe('mockGroup — prefix', () => {
   });
 });
 
+describe('mockGroup — scenario presets', () => {
+  let server: Awaited<ReturnType<typeof mockr>>;
+  afterEach(async () => {
+    await server?.close();
+  });
+
+  it('serves a named preset selected by the x-mockr-scenario header', async () => {
+    server = await mockr({
+      endpoints: mockGroup<E>()
+        .get('/api/todos', {
+          scenarios: {
+            empty: () => [],
+            boom: (_req, ctx) => ctx.error(500, 'down'),
+          },
+          fn: () => [{ id: 1, title: 'normal' }],
+        })
+        .done(),
+    });
+
+    expect(await (await fetch(`${server.url}/api/todos`)).json()).toEqual([{ id: 1, title: 'normal' }]);
+    expect(
+      await (await fetch(`${server.url}/api/todos`, { headers: { 'x-mockr-scenario': 'empty' } })).json()
+    ).toEqual([]);
+    const boom = await fetch(`${server.url}/api/todos`, { headers: { 'x-mockr-scenario': 'boom' } });
+    expect(boom.status).toBe(500);
+  });
+
+  it('serves a static preset selected by the _scenario query param', async () => {
+    server = await mockr({
+      endpoints: mockGroup<E>()
+        .get('/api/todos', {
+          scenarios: { empty: [] },
+          fn: () => [{ id: 1, title: 'normal' }],
+        })
+        .done(),
+    });
+
+    expect(await (await fetch(`${server.url}/api/todos?_scenario=empty`)).json()).toEqual([]);
+  });
+});
+
 describe('mockr({ groups })', () => {
   let server: Awaited<ReturnType<typeof mockr>>;
   afterEach(async () => {

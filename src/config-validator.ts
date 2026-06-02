@@ -13,6 +13,7 @@ const KNOWN_KEYS = new Set([
   'idKey',
   'ws',
   'delay',
+  'responseSchemas',
 ]);
 
 /**

@@ -27,6 +27,7 @@ import { parseQuery, getPath, readBody, parseBody, sendJson, sendRaw } from './h
 import { handleControlRoute, type InternalEndpoint } from './control-routes.js';
 import { validateConfig, formatErrors, checkDelayValue } from './config-validator.js';
 import { createDataFileWatcher } from './data-file-watcher.js';
+import { lintEndpoints } from './lint.js';
 
 /**
  * Warn at boot when a list endpoint's items lack the configured `idKey`.
@@ -52,6 +53,7 @@ function parseCli(): {
   proxy?: string;
   target?: string;
   recorder?: boolean;
+  verify?: boolean;
 } {
   try {
     const { values } = parseArgs({
@@ -62,6 +64,7 @@ function parseCli(): {
         proxy: { type: 'string' },
         target: { type: 'string' },
         recorder: { type: 'boolean' },
+        verify: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
       },
       strict: false,
@@ -78,6 +81,7 @@ Options:
   --target <name>   Select a named entry from proxy.targets as the proxy target
   --tui             Enable the terminal UI
   --recorder        Enable the recorder (record & map network traffic)
+  --verify          Check served responses against their responseSchema
   --help, -h        Show this help message`);
       process.exit(0);
     }
@@ -87,6 +91,7 @@ Options:
       proxy: values.proxy as string | undefined,
       target: values.target as string | undefined,
       recorder: values.recorder as boolean | undefined,
+      verify: values.verify as boolean | undefined,
     };
   } catch {
     return {};
@@ -112,8 +117,14 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     throw new Error(formatErrors(validation.errors));
   }
 
+  // Startup lint — non-fatal warnings (e.g. routes shadowed by an earlier catch-all).
+  for (const warning of lintEndpoints(config.endpoints || [])) {
+    console.warn(`mockr lint: ${warning}`);
+  }
+
   // CLI args override config
   const cli = parseCli();
+  if (cli.verify !== undefined) config = { ...config, verify: cli.verify };
   if (cli.tui !== undefined) config = { ...config, tui: cli.tui };
   if (cli.port !== undefined) config = { ...config, port: cli.port };
   if (cli.target !== undefined && cli.proxy !== undefined) {
@@ -371,6 +382,19 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     // No `body` / `response` shorthand — use `data: T` (record) for static
     // payloads, or `handler` for custom status/headers.
     void urlStr;
+  }
+
+  // Contract-drift checks: (matcher, verb) -> response schema, collected from
+  // any def carrying `responseSchemas`. Used by the post-response verify pass.
+  const verifyChecks: { matcher: ReturnType<typeof createMatcher>; method: string; url: string; schema: ParseableSchema }[] = [];
+  for (const def of config.endpoints || []) {
+    const rs = (def as { responseSchemas?: Partial<Record<string, ParseableSchema>> }).responseSchemas;
+    if (!rs) continue;
+    const m = createMatcher(def.url);
+    const defUrl = typeof def.url === 'string' ? def.url : def.url.source;
+    for (const [verb, schema] of Object.entries(rs)) {
+      if (schema) verifyChecks.push({ matcher: m, method: verb, url: defUrl, schema });
+    }
   }
 
   /**
@@ -980,6 +1004,20 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       if (mw.post) {
         const result = await mw.post(fakeReq, handlerResult);
         if (result && 'body' in result) handlerResult = result;
+      }
+    }
+
+    // Contract-drift verify: check the outgoing body against the endpoint's
+    // responseSchema and report mismatches. Skips raw responses.
+    if (config.verify && !('raw' in handlerResult && handlerResult.raw)) {
+      for (const chk of verifyChecks) {
+        if (chk.method !== method || !chk.matcher(path)) continue;
+        const parsed = chk.schema.safeParse(handlerResult.body);
+        if (!parsed.success) {
+          console.warn(`  drift  ${method.padEnd(6)} ${fullUrl} — response failed responseSchema`);
+          config.onDrift?.({ url: chk.url, method, issues: parsed.error.issues ?? parsed.error.message });
+        }
+        break;
       }
     }
 

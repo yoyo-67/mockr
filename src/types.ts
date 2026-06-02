@@ -109,6 +109,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       idKey?: string;
       methods?: MethodMap<TEndpoints>;
       delay?: EndpointDelay;
+      responseSchemas?: Partial<Record<HttpVerb, ParseableSchema>>;
       dataFile?: never;
       handler?: never;
       body?: never;
@@ -140,6 +141,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
         | BivariantHandler<TEndpoints>
         | HandlerSpec<any, any, any, TEndpoints>;
       delay?: EndpointDelay;
+      responseSchemas?: Partial<Record<HttpVerb, ParseableSchema>>;
       data?: never;
       dataFile?: never;
       body?: never;
@@ -151,6 +153,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       url: string | RegExp;
       methods: MethodMap<TEndpoints>;
       delay?: EndpointDelay;
+      responseSchemas?: Partial<Record<HttpVerb, ParseableSchema>>;
       method?: never;
       data?: never;
       dataFile?: never;
@@ -223,6 +226,22 @@ export interface MockrConfig<TEndpoints = Record<string, unknown>> {
   proxy?: { target: string; targets?: Record<string, string> };
   tui?: boolean;
   recorder?: { sessionsDir?: string; mocksDir?: string; serverFile?: string };
+  /**
+   * Validate every served response body against its endpoint's `responseSchema`
+   * and report mismatches via `onDrift`. Run with a proxy/forward route to check
+   * the real backend against your declared contract; run against mocks to check
+   * the mocks themselves haven't drifted. Also enabled by the `--verify` CLI flag.
+   */
+  verify?: boolean;
+  /** Called once per response whose body fails its `responseSchema` (when `verify`). */
+  onDrift?: (info: DriftInfo) => void;
+}
+
+/** Reported by `onDrift` when a served body fails its endpoint's `responseSchema`. */
+export interface DriftInfo {
+  url: string;
+  method: string;
+  issues: unknown;
 }
 
 export interface EndpointInfo {

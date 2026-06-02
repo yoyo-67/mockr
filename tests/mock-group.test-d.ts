@@ -108,6 +108,35 @@ describe('mockGroup — ctx shorthands types', () => {
   });
 });
 
+describe('mockGroup — responseSchema + verify config types', () => {
+  it('accepts responseSchema on a verb spec and verify/onDrift on config', () => {
+    const defs = mockGroup<E>()
+      .get('/api/todos', { responseSchema: z.object({ id: z.number(), title: z.string() }).array(), fn: () => [] })
+      .done();
+    void mockr<E>({
+      verify: true,
+      onDrift: (info) => {
+        expectTypeOf(info.url).toEqualTypeOf<string>();
+        expectTypeOf(info.method).toEqualTypeOf<string>();
+      },
+      endpoints: defs,
+    });
+  });
+});
+
+describe('mockGroup — scenario preset types', () => {
+  it('accepts presets typed against the url body (fn or static)', () => {
+    const mock = mockGroup<E>();
+    mock.get('/api/todos', { scenarios: { empty: () => [], one: [{ id: 1, title: 'a' }] }, fn: () => [] });
+  });
+
+  it('rejects a preset body of the wrong shape', () => {
+    const mock = mockGroup<E>();
+    // @ts-expect-error — { weight }[] is not a Todo[]
+    mock.get('/api/todos', { scenarios: { bad: [{ weight: 1 }] }, fn: () => [] });
+  });
+});
+
 describe('mockr({ groups }) types', () => {
   it('accepts arrays of EndpointDef<E> as groups under one shared map', () => {
     const a = mockGroup<E>().get('/api/todos', () => []).done();

@@ -67,6 +67,21 @@ export interface VerbSpec<
   query?: TQuery;
   params?: TParams;
   delay?: EndpointDelay;
+  /** Contract for this response, checked against the served body under `mockr({ verify })`. */
+  responseSchema?: ParseableSchema;
+  /**
+   * Named alternate responses, selected per request by the `x-mockr-scenario`
+   * header or `?_scenario=<name>` query param. Each is a static body/result or a
+   * handler fn; falls back to `fn` when no scenario matches.
+   */
+  scenarios?: Record<
+    string,
+    | TypedResult<TEndpoints, U>
+    | ((
+        req: MockrRequest<{ body: BodyOf<TBody>; params: ParamsOf<TParams, U & string>; query: QueryOf<TQuery> }>,
+        ctx: HandlerContext<TEndpoints, U>,
+      ) => TypedResult<TEndpoints, U> | Promise<TypedResult<TEndpoints, U>>)
+  >;
   fn: (
     req: MockrRequest<{ body: BodyOf<TBody>; params: ParamsOf<TParams, U & string>; query: QueryOf<TQuery> }>,
     ctx: HandlerContext<TEndpoints, U>,
@@ -88,6 +103,7 @@ interface VerbEntry {
   verb: Verb;
   spec: HandlerSpec<any, any, any, any>;
   delay?: EndpointDelay;
+  responseSchema?: ParseableSchema;
 }
 
 interface UrlEntry {
@@ -115,17 +131,48 @@ function wrapFn(fn: (...args: never[]) => unknown): HandlerSpec['fn'] {
   }) as HandlerSpec['fn'];
 }
 
+/** Scenario selector: `x-mockr-scenario` header wins, then `?_scenario=`. */
+function selectedScenario(req: { headers?: Record<string, unknown>; query?: Record<string, unknown> }): string | undefined {
+  const header = req.headers?.['x-mockr-scenario'];
+  if (typeof header === 'string') return header;
+  const query = req.query?._scenario;
+  if (typeof query === 'string') return query;
+  return undefined;
+}
+
+type AnyScenario =
+  | unknown
+  | ((req: unknown, ctx: unknown) => unknown);
+
+/** Wrap `fn` so a selected scenario preset overrides it; otherwise `fn` runs. */
+function withScenarios(
+  fn: (req: unknown, ctx: unknown) => unknown,
+  scenarios: Record<string, AnyScenario>,
+): (req: unknown, ctx: unknown) => unknown {
+  return (req, ctx) => {
+    const name = selectedScenario(req as { headers?: Record<string, unknown>; query?: Record<string, unknown> });
+    if (name !== undefined && Object.prototype.hasOwnProperty.call(scenarios, name)) {
+      const preset = scenarios[name];
+      return typeof preset === 'function' ? (preset as (r: unknown, c: unknown) => unknown)(req, ctx) : preset;
+    }
+    return fn(req, ctx);
+  };
+}
+
 function toSpec(def: VerbFn<any, any> | VerbSpec<any, any, any, any, any>): HandlerSpec<any, any, any, any> {
   if (typeof def === 'function') {
     return { [HANDLER_SPEC_BRAND]: true, fn: wrapFn(def) };
   }
+
+  const baseFn = def.fn as (req: unknown, ctx: unknown) => unknown;
+  const effectiveFn = def.scenarios ? withScenarios(baseFn, def.scenarios as Record<string, AnyScenario>) : baseFn;
 
   return {
     [HANDLER_SPEC_BRAND]: true,
     body: def.body,
     query: def.query,
     params: def.params,
-    fn: wrapFn(def.fn),
+    fn: wrapFn(effectiveFn),
   };
 }
 
@@ -198,7 +245,20 @@ export function mockGroup<TEndpoints = Record<string, unknown>>(): MockGroup<TEn
       throw new Error(`mockGroup: duplicate ${verb} ${url}`);
     }
     const delay = typeof def === 'function' ? undefined : def.delay;
-    entry.verbs.push({ verb, spec: toSpec(def), delay });
+    const responseSchema = typeof def === 'function' ? undefined : def.responseSchema;
+    entry.verbs.push({ verb, spec: toSpec(def), delay, responseSchema });
+  }
+
+  function responseSchemasOf(verbs: VerbEntry[]): Partial<Record<Verb, ParseableSchema>> | undefined {
+    const map: Partial<Record<Verb, ParseableSchema>> = {};
+    let any = false;
+    for (const v of verbs) {
+      if (v.responseSchema) {
+        map[v.verb] = v.responseSchema;
+        any = true;
+      }
+    }
+    return any ? map : undefined;
   }
 
   const group: MockGroup<TEndpoints, string> = {
@@ -242,12 +302,14 @@ export function mockGroup<TEndpoints = Record<string, unknown>>(): MockGroup<TEn
         const entry = byUrl.get(url)!;
         const hasData = entry.data !== undefined;
         const { verbs } = entry;
+        const responseSchemas = responseSchemasOf(verbs);
 
         if (hasData) {
           const def: Record<string, unknown> = { url, data: entry.data };
           if (verbs.length > 0) {
             def.methods = Object.fromEntries(verbs.map((v) => [v.verb, v.spec]));
           }
+          if (responseSchemas) def.responseSchemas = responseSchemas;
           defs.push(def as EndpointDef<TEndpoints>);
           continue;
         }
@@ -256,12 +318,15 @@ export function mockGroup<TEndpoints = Record<string, unknown>>(): MockGroup<TEn
           const [only] = verbs;
           const def: Record<string, unknown> = { url, method: only.verb, handler: only.spec };
           if (only.delay !== undefined) def.delay = only.delay;
+          if (responseSchemas) def.responseSchemas = responseSchemas;
           defs.push(def as EndpointDef<TEndpoints>);
           continue;
         }
 
         const methods = Object.fromEntries(verbs.map((v) => [v.verb, v.spec]));
-        defs.push({ url, methods } as EndpointDef<TEndpoints>);
+        const def: Record<string, unknown> = { url, methods };
+        if (responseSchemas) def.responseSchemas = responseSchemas;
+        defs.push(def as EndpointDef<TEndpoints>);
       }
 
       return defs;
