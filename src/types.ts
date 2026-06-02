@@ -52,7 +52,20 @@ export interface HandlerContext<TEndpoints = Record<string, unknown>, TCurrentUr
   forward: TCurrentUrl extends keyof TEndpoints
     ? <T = CurrentEndpointBody<TEndpoints, TCurrentUrl>>(patch?: ForwardPatch) => Promise<ForwardResult<T>>
     : <T = unknown>(patch?: ForwardPatch) => Promise<ForwardResult<T>>;
+  /** Error response shorthand: `{ status, body: message ? { error: message } : undefined }`. */
+  error(status: number, message?: string): ShorthandResult;
+  /** Created shorthand: `{ status: 201, body }`. */
+  created(body: unknown): ShorthandResult;
+  /** Empty-response shorthand: `{ status: 204 }`. */
+  noContent(): ShorthandResult;
 }
+
+/**
+ * Result produced by the `ctx` shorthands — always a concrete status and body.
+ * Assignable both to `HandlerResult` (old handler factory returns) and to the
+ * builder's `TypedResult` explicit-status escape.
+ */
+export type ShorthandResult = { status: number; body: unknown; headers?: Record<string, string | string[]> };
 
 export interface Middleware {
   name?: string;
@@ -198,6 +211,12 @@ export interface ScenarioSetup<TEndpoints = Record<string, unknown>> {
 export interface MockrConfig<TEndpoints = Record<string, unknown>> {
   port?: number;
   endpoints?: EndpointDef<TEndpoints>[];
+  /**
+   * Mock groups (each the `EndpointDef[]` from a `mockGroup().done()`), flattened
+   * into `endpoints` at boot. Lets multiple files compose without widening to
+   * `EndpointDef<any>[]` — every group shares the one `TEndpoints` map.
+   */
+  groups?: ReadonlyArray<ReadonlyArray<EndpointDef<TEndpoints>>>;
   middleware?: Middleware[];
   scenarios?: Record<string, (s: ScenarioSetup<TEndpoints>) => void>;
   fixtureFile?: string;

@@ -23,6 +23,8 @@ export type { HandlerSpec } from './handler.js';
 export { ws, isWsSpec, WS_SPEC_BRAND } from './ws.js';
 export type { WsSpec, WsEndpoint, WsHandle, WsClient, WsFactoryOpts, WsConnectCtx, WsMessageCtx, WsCloseCtx } from './ws.js';
 export { endpoints } from './endpoints-helper.js';
+export { mockGroup } from './mock-group.js';
+export type { MockGroup, VerbFn, VerbSpec, PathParams, GroupBody, TypedResult } from './mock-group.js';
 export { file, isFileRef, getFilePath, FILE_REF_BRAND } from './file.js';
 export type { FileRef } from './file.js';
 export { createListHandle } from './list-handle.js';

@@ -60,7 +60,8 @@ function applyHeaders(res: ServerResponse, headers: Record<string, string | stri
 }
 
 export function sendJson(res: ServerResponse, status: number, body: unknown, headers: Record<string, string | string[]> = {}) {
-  const json = JSON.stringify(body);
+  // Undefined body (e.g. a 204 from ctx.noContent) serializes to no content.
+  const json = body === undefined ? '' : JSON.stringify(body);
   applyHeaders(res, headers);
   if (!res.hasHeader('Content-Type')) res.setHeader('Content-Type', 'application/json');
   res.setHeader('Content-Length', Buffer.byteLength(json));

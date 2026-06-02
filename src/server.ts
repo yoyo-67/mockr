@@ -96,6 +96,16 @@ Options:
 export async function mockr<TEndpoints = Record<string, unknown>>(
   config: MockrConfig<TEndpoints> = {},
 ): Promise<MockrServer<TEndpoints>> {
+  // Flatten `groups` (each a `mockGroup().done()` array) into `endpoints` so
+  // validation and registration walk a single list.
+  if (config.groups && config.groups.length > 0) {
+    config = {
+      ...config,
+      endpoints: [...(config.endpoints ?? []), ...config.groups.flatMap((g) => [...g])],
+      groups: undefined,
+    };
+  }
+
   // Boot-time validation — throws aggregated error on bad config before any I/O.
   const validation = validateConfig(config as MockrConfig<any>);
   if (!validation.valid) {
@@ -741,6 +751,12 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
 
         return result as { status: number; body: unknown; headers: Record<string, string | string[]> };
       }) as HandlerContext['forward'],
+      error: (status: number, message?: string) => ({
+        status,
+        body: message === undefined ? undefined : { error: message },
+      }),
+      created: (body: unknown) => ({ status: 201, body }),
+      noContent: () => ({ status: 204, body: undefined }),
     };
 
     // Expose current proxy target so external tooling (dev-server probes,
