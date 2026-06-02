@@ -54,6 +54,10 @@ type HandlerSpecInput<
  * Factory that builds a branded `HandlerSpec` from validation schemas and a
  * handler function. Schema-bearing slots flow through to `fn`'s `req` so
  * `req.body` / `req.query` / `req.params` are typed as the schemas' outputs.
+ *
+ * @deprecated Prefer the `mockGroup()` builder, which infers the response body,
+ * path params, and `ctx` typing from the URL — no manual generics. This factory
+ * will be removed in a future major.
  */
 export function handler<
   TBody extends ParseableSchema | undefined = undefined,

@@ -14,6 +14,10 @@ import type { EndpointDef } from './types.js';
  * type E = A & B;
  * await mockr<E>({ endpoints: [...aMocks, ...bMocks] });
  * ```
+ *
+ * @deprecated Prefer `mockGroup<E>()` + `mockr({ groups: [...] })`, which share
+ * one `Endpoints` map (no intersection composition) and infer body/params/ctx
+ * per call. This helper will be removed in a future major.
  */
 export function endpoints<TEndpoints = Record<string, unknown>>(
   defs: ReadonlyArray<EndpointDef<TEndpoints>>,

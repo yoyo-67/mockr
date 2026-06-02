@@ -50,6 +50,10 @@ export type {
 } from './memory-session.js';
 export type { MemorySessionInfo, MemorySessionEntry } from './types.js';
 
+/**
+ * @deprecated Prefer `mockGroup<E>().data(url, seed)`, which types the seed
+ * against the URL's declared type. This helper will be removed in a future major.
+ */
 export function typedData<T>(data: T[]): T[] {
   return data;
 }
