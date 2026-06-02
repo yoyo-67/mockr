@@ -5,7 +5,24 @@
 - `T extends U[]` → `ListHandle<U>`
 - `T extends object` → `RecordHandle<T>`
 
-`server.endpoint(url)` and `ctx.endpoint(url)` (inside a handler) both return one. The `Endpoints` map you pass to `mockr<E>(...)` carries the per-URL type.
+`server.endpoint(url)` and `ctx.endpoint(url)` (inside a handler) both return one. The `Endpoints` map carries the per-URL type, so the handle is typed without a cast.
+
+Stores are authored with [`.data(url, seed)`](/reference/builder) on the builder, or as a plain def for file-backed data:
+
+```ts
+mockGroup<Endpoints>()
+  .data('/internal/todos', [{ id: 1, title: 'Buy milk', done: false }])  // → ListHandle<Todo>
+  .done();
+
+// file-backed store (plain def — the builder has no .dataFile)
+{ url: '/api/todos', dataFile: file<Todo[]>('./todos.json') }            // → ListHandle<Todo>
+```
+
+A handler reaches any other store through `ctx.endpoint(url)`:
+
+```ts
+.get('/api/todos', (_req, ctx) => ctx.endpoint('/internal/todos').data)
+```
 
 ## `ListHandle<U>` — list endpoints (`data: U[]`)
 
@@ -71,7 +88,7 @@ Returned by `await mockr<E>({...})`. Stays alive until `.close()`.
 
 ## `EndpointDef`
 
-The shape each entry of `endpoints: [...]` accepts. Mutually exclusive top-level shorthands plus optional cross-cutting config:
+The shape each entry of `endpoints: [...]` accepts. The [builder](/reference/builder) emits these for you; write them directly when you need `dataFile` or `ws`, which the builder doesn't cover. Mutually exclusive top-level shorthands plus optional cross-cutting config:
 
 ```ts
 interface EndpointDef<E, U extends keyof E = keyof E> {
@@ -79,14 +96,13 @@ interface EndpointDef<E, U extends keyof E = keyof E> {
   // exactly one of:
   data?: E[U];                   // → list (array) or record (object)
   dataFile?: string | FileRef<E[U]>; // hot-reloaded JSON
-  handler?: HandlerSpec;         // hand-rolled response logic
   ws?: WsSpec;                   // WebSocket endpoint
-  methods?: Record<HttpMethod, HandlerSpec>; // multi-verb
+  methods?: Record<HttpMethod, VerbSpec>;     // multi-verb (builder output)
   // optional:
-  method?: HttpMethod;           // verb shorthand for `handler`
+  method?: HttpMethod;
   enabled?: boolean;
   idKey?: string;                // override `'id'` for list endpoints
 }
 ```
 
-`endpoints<E>([...])` is a per-group type-checking helper — runtime no-op. Use it when splitting mocks across files.
+Most defs come from `mockGroup().done()`. Reach for a hand-written def only for file-backed stores (`dataFile: file<T>('./x.json')`, hot-reloaded on change) or WebSockets (`ws({...})`); both go straight into `endpoints: [...]` alongside any `groups`.

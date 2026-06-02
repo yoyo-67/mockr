@@ -20,23 +20,25 @@ Toggle at runtime: `server.enableProxy()` / `disableProxy()` / `setProxyTarget(u
 ## Code
 
 ```ts
-import { mockr, handler } from '@yoyo-org/mockr';
+import { mockr, mockGroup } from '@yoyo-org/mockr';
 
 const TARGET = process.env.PROXY_TARGET || 'https://jsonplaceholder.typicode.com';
+
+type Endpoints = {
+  '/api/feature-flags': { darkMode: boolean; betaSearch: boolean };
+  '/api/users/me': { id: number; name: string; role: string };
+};
+
+// mock the routes you're working on
+const dev = mockGroup<Endpoints>()
+  .data('/api/feature-flags', { darkMode: true, betaSearch: true })
+  .get('/api/users/me', () => ({ id: 42, name: 'Dev User', role: 'admin' }))
+  .done();
 
 mockr({
   port: 3008,
   proxy: { target: TARGET },
-  endpoints: [
-    // mock the routes you're working on
-    { url: '/api/feature-flags', data: { darkMode: true, betaSearch: true } },
-    {
-      url: '/api/users/me',
-      handler: handler({
-        fn: () => ({ body: { id: 42, name: 'Dev User', role: 'admin' } }),
-      }),
-    },
-  ],
+  groups: [dev],
 });
 ```
 

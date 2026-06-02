@@ -1,6 +1,6 @@
 # 07 — Multi-method
 
-Many HTTP verbs on the same URL — group them in a `methods` map instead of repeating the URL across array entries.
+Many HTTP verbs on the same URL — register each verb with its own builder call on the same URL; they merge into one endpoint at `.done()`.
 
 ::: tip Run this chapter in 30 seconds
 1. **[Open in StackBlitz →](https://stackblitz.com/github/yoyo-67/mockr?file=examples/07-multi-method/server.ts)** — full Node sandbox in your browser, no install.
@@ -13,46 +13,38 @@ Many HTTP verbs on the same URL — group them in a `methods` map instead of rep
 
 ## Concept
 
-`methods` maps verb → handler. Verbs not in the map respond `405 Method Not Allowed` with an `Allow` header listing the supported verbs. The map can stand alone (no data fallback) or sit alongside `data`/`dataFile` to override specific verbs while default CRUD covers the rest.
+Call `.get` / `.post` / `.delete` (etc.) on the same URL — the builder collects them into a single endpoint with several verbs at `.done()`. Verbs you don't register respond `405 Method Not Allowed` with an `Allow` header listing the supported ones. These verb calls can stand alone or sit alongside a `.data` store on the same URL to override specific verbs while default CRUD covers the rest.
 
 ## Code
 
 ```ts
-import { mockr, handler } from '@yoyo-org/mockr';
+import { mockr, mockGroup } from '@yoyo-org/mockr';
 import { z } from 'zod';
 
 interface CartItem { id: number; product_id: number; quantity: number }
 
-type Endpoints = { '/internal/cart': CartItem[] };
+type Endpoints = {
+  '/internal/cart': CartItem[];
+  '/api/cart': CartItem[];
+};
 
-mockr<Endpoints>({
-  port: 3007,
-  endpoints: [
-    { url: '/internal/cart', data: [] },
-
-    {
-      url: '/api/cart',
-      methods: {
-        GET: handler({
-          fn: (_req, ctx) => ({ body: ctx.endpoint('/internal/cart').data }),
-        }),
-        POST: handler({
-          body: z.object({ product_id: z.number(), quantity: z.number() }),
-          fn: (req, ctx) => {
-            const item = ctx.endpoint('/internal/cart').insert(req.body as CartItem);
-            return { status: 201, body: { item } };
-          },
-        }),
-        DELETE: handler({
-          fn: (_req, ctx) => {
-            ctx.endpoint('/internal/cart').clear();
-            return { status: 204, body: '' };
-          },
-        }),
-      },
+const cart = mockGroup<Endpoints>()
+  .data('/internal/cart', [])
+  .get('/api/cart', (_req, ctx) => ctx.endpoint('/internal/cart').data)
+  .post('/api/cart', {
+    body: z.object({ product_id: z.number(), quantity: z.number() }),
+    fn: (req, ctx) => {
+      ctx.endpoint('/internal/cart').insert(req.body as CartItem);
+      return ctx.created(ctx.endpoint('/internal/cart').data);
     },
-  ],
-});
+  })
+  .delete('/api/cart', (_req, ctx) => {
+    ctx.endpoint('/internal/cart').clear();
+    return ctx.noContent();
+  })
+  .done();
+
+mockr({ port: 3007, groups: [cart] });
 ```
 
 ## Try it

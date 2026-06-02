@@ -14,7 +14,7 @@ const server = await mockr<Endpoints>({
     serverFile: './src/server.ts',  // patched on map
   },
   proxy: { target: 'https://api.example.com' },
-  endpoints: [/* mapped routes get appended automatically */],
+  endpoints: [/* mapped dataFile routes get appended automatically */],
 });
 ```
 
@@ -57,7 +57,7 @@ Live view of every active endpoint:
 |---|---|
 | Toggle | `enableEndpoint` / `disableEndpoint` |
 | Editable URL | Rewrite path (e.g., `/api/projects/abc/items` → `/api/projects/*/items`) |
-| Type selector | Switch between `data` / `dataFile` / `handler` |
+| Type selector | Switch between `data` / `dataFile` |
 | Delete | Remove entry from server file |
 
 ## `Recorder` API

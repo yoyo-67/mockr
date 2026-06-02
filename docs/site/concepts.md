@@ -2,35 +2,46 @@
 
 The mental model is small. Read this once, then jump to [tutorial](/tutorial/) or [reference](/reference/).
 
+## Author with the builder
+
+`mockGroup<Endpoints>()` is the way you define mocks. It's typed against your `Endpoints` map, so each call infers the response body from the URL, path params from the `:name` segments, and types `ctx` — no generics, no casts. `.done()` produces the endpoint list you hand to `mockr({ groups })`.
+
+```ts
+import { mockr, mockGroup } from '@yoyo-org/mockr';
+
+const orders = mockGroup<Endpoints>()
+  .data('/internal/orders', [/* the data */])                 // in-memory store, free CRUD
+  .get('/api/orders', (_req, ctx) => ctx.endpoint('/internal/orders').data) // return body directly
+  .done();
+
+await mockr({ port: 4000, groups: [orders] });
+```
+
+Return the body directly, or `{ status, body }` for a custom status, or `ctx.error/created/noContent(...)`.
+
 ## Endpoints are named data holders
 
-Every endpoint has a URL and a payload. The shape of the payload picks the behavior — no glue code:
+Every endpoint has a URL and a behavior picked by how you declare it — no glue code:
 
-| Payload | Endpoint type | Verbs handled |
+| Declaration | Endpoint type | Verbs handled |
 |---|---|---|
-| `data: T[]` | List | GET / POST / PUT / PATCH / DELETE |
-| `data: T` (object) | Record | GET / PATCH / PUT |
-| `dataFile: './x.json'` | Inferred from JSON shape | Same as above + hot-reload |
-| `handler: handler({...})` | Hand-rolled | Single verb (default GET) |
-| `methods: { GET, POST, ... }` | Hand-rolled per verb | Each declared verb |
-| `ws: ws({...})` | WebSocket | n/a — upgrade |
+| `.data(url, T[])` | List | GET / POST / PUT / PATCH / DELETE |
+| `.data(url, T)` (object) | Record | GET / PATCH / PUT |
+| `.get/.post/...(url, fn)` | Hand-rolled | The verb you call |
+| `{ url, dataFile: file<T>('./x.json') }` | Inferred from JSON shape | List/record + hot-reload |
+| `{ url, ws: ws({...}) }` | WebSocket | n/a — upgrade |
 
-Mutations on list / record endpoints persist in memory across requests. `server.reset()` restores baselines.
+Mutations on list / record endpoints persist in memory across requests. `server.reset()` restores baselines. File-backed (`dataFile`) and WebSocket (`ws`) endpoints are plain defs you pass in `endpoints: [...]` — the builder covers handlers and in-memory stores.
 
 ## `/internal/*` vs `/api/*`
 
-A convention, not a rule. `/internal/*` endpoints hold source-of-truth data. `/api/*` endpoints are thin handlers that join, filter, or mutate them. The frontend only calls `/api/*`.
+A convention, not a rule. `/internal/*` endpoints hold source-of-truth data. `/api/*` endpoints are thin handlers that join, filter, or mutate them via `ctx.endpoint(url)`. The frontend only calls `/api/*`.
 
 ```ts
-endpoints: [
-  { url: '/internal/orders', data: [/* the data */] },     // never called by frontend
-  {                                                         // public api
-    url: '/api/orders',
-    handler: handler({ fn: (req, ctx) => ({
-      body: ctx.endpoint('/internal/orders').data,
-    }) }),
-  },
-]
+mockGroup<Endpoints>()
+  .data('/internal/orders', [/* the data */])   // never called by frontend
+  .get('/api/orders', (_req, ctx) => ctx.endpoint('/internal/orders').data)
+  .done();
 ```
 
 Why: keeps the data layer reusable across multiple public routes without duplicating the array.
@@ -46,32 +57,33 @@ type Endpoints = {
   '/ws/notifications': WsEndpoint<ServerEvent, ClientEvent>;
 };
 
-mockr<Endpoints>({ /* ... */ });
+const orders = mockGroup<Endpoints>()./* ... */.done();
 ```
 
 Mockr reads it to:
-- Type the `data` field per endpoint.
-- Type `server.endpoint(url)` and `ctx.endpoint(url)`.
+- Type each handler's response body and `.data()` seed.
+- Type `req.params` (from `:name`), `server.endpoint(url)`, and `ctx.endpoint(url)`.
 - Validate shape via `EndpointHandle<T>` (list vs record vs ws).
 
-You don't have to declare it — without `<E>` everything is `unknown`. Adding it pays off the moment two endpoints share data.
+Declare it **once** and share it across every group — `mockr({ groups: [a, b] })` composes groups that use the same map, with no `EndpointDef<any>` cast. Cross-group stores (a `/internal/*` list mutated by one group and read by another) live in that one map, so `ctx.endpoint` is typed everywhere.
 
-## Two ways to mock a route
+## Pick the cheapest declaration
 
 | You want | Use |
 |---|---|
-| GET an array, full CRUD for free | `data: T[]` |
-| GET an object, mutable | `data: T` |
-| JSON file you edit by hand, hot-reloaded | `dataFile` |
-| Custom status / headers / cross-endpoint joins | `handler({ fn })` |
-| Streaming bidirectional events | `ws({ ... })` |
+| GET an array, full CRUD for free | `.data(url, T[])` |
+| GET an object, mutable | `.data(url, T)` |
+| JSON file you edit by hand, hot-reloaded | `{ url, dataFile: file<T>(...) }` |
+| Custom status / headers / cross-endpoint joins | `.get/.post/...(url, fn)` |
+| Streaming bidirectional events | `{ url, ws: ws({ ... }) }` |
 
-Pick the cheapest one that does the job. Promote to `handler` only when defaults aren't enough.
+Promote to a handler only when the defaults aren't enough.
 
 ## Side channels
 
-- **HTTP control** — `POST /__mockr/scenario` switches scenarios; `/__mockr/recorder/*` drives the Chrome extension. Off in production builds (the binary won't ship anyway — mockr is dev-time).
 - **`ctx.forward()`** — call upstream from inside a handler. Mutate or replay the response. Requires `proxy.target`.
+- **Per-endpoint scenarios** — a verb spec's `scenarios: { empty, error }` switch via the `x-mockr-scenario` header or `?_scenario=`. Config-level `scenarios` patch endpoints by name via `POST /__mockr/scenario`.
+- **`verify`** — run with `verify: true` (or `--verify`) to check served bodies against each endpoint's `responseSchema` and report drift.
 - **`WsHandle.broadcast`** — push to every connected ws client from any HTTP handler.
 
 ## What mockr is **not**

@@ -20,7 +20,7 @@ Convention: `/internal/*` endpoints hold source-of-truth data. `/api/*` endpoint
 ## Code
 
 ```ts
-import { mockr, handler } from '@yoyo-org/mockr';
+import { mockr, mockGroup } from '@yoyo-org/mockr';
 
 interface Product { id: number; name: string; price: number; stock: number }
 interface CartItem { id: number; product_id: number; quantity: number }
@@ -28,33 +28,28 @@ interface CartItem { id: number; product_id: number; quantity: number }
 type Endpoints = {
   '/internal/products': Product[];
   '/internal/cart': CartItem[];
+  '/api/cart': { item: CartItem };
 };
 
-mockr<Endpoints>({
-  port: 3003,
-  endpoints: [
-    { url: '/internal/products', data: [/* ... */] },
-    { url: '/internal/cart', data: [] },
+const shop = mockGroup<Endpoints>()
+  .data('/internal/products', [/* ... */])
+  .data('/internal/cart', [])
+  .post('/api/cart', (req, ctx) => {
+    const { product_id, quantity } = req.body as { product_id: number; quantity: number };
+    const products = ctx.endpoint('/internal/products');
+    const cart = ctx.endpoint('/internal/cart');
 
-    {
-      url: '/api/cart',
-      method: 'POST',
-      handler: handler({ fn: (req, ctx) => {
-        const { product_id, quantity } = req.body as { product_id: number; quantity: number };
-        const products = ctx.endpoint('/internal/products');
-        const cart = ctx.endpoint('/internal/cart');
+    const product = products.findById(product_id);
+    if (!product) return ctx.error(404, 'not found');
+    if (product.stock < quantity) return ctx.error(400, 'out of stock');
 
-        const product = products.findById(product_id);
-        if (!product) return { status: 404, body: { error: 'not found' } };
-        if (product.stock < quantity) return { status: 400, body: { error: 'out of stock' } };
+    products.update(product_id, { stock: product.stock - quantity });
+    const item = cart.insert({ product_id, quantity } as CartItem);
+    return ctx.created({ item });
+  })
+  .done();
 
-        products.update(product_id, { stock: product.stock - quantity });
-        const item = cart.insert({ product_id, quantity } as CartItem);
-        return { status: 201, body: { item } };
-      } }),
-    },
-  ],
-});
+mockr({ port: 3003, groups: [shop] });
 ```
 
 ## Try it

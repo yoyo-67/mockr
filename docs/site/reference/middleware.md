@@ -14,7 +14,7 @@ await mockr({
     auth({ token: 'secret' }),         // 401 unless Authorization matches
     errorInjection({ rate: 0.05 }),    // 5% chance of 500
   ],
-  endpoints: [/* ... */],
+  groups: [mocks],
 });
 ```
 

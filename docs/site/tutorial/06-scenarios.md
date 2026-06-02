@@ -13,28 +13,68 @@ Named server states you can switch between. Useful for demos, e2e tests, and rep
 
 ## Concept
 
-Each scenario is a setup function. When activated, mockr first resets every endpoint to its initial state, then runs the function. Switch via `server.scenario(name)` programmatically or `POST /__mockr/scenario { "name": "..." }` from the browser.
+Two layers. **Per-endpoint scenarios** live on a verb spec — named alternates for *that* route, picked per request and never touching server state. **Config-level scenarios** are setup functions that reshape the whole server: on activation mockr resets every endpoint to its initial state, then runs the function.
 
-## Code
+## Per-endpoint scenarios
+
+Put a `scenarios` map on a verb spec alongside `fn`. Each entry is a handler with the same signature. The active one is chosen per request by the `x-mockr-scenario` header or the `?_scenario=<name>` query param; with neither, `fn` runs. State stays untouched, so these are safe to flip mid-session.
 
 ```ts
-import { mockr } from '@yoyo-org/mockr';
+import { mockr, mockGroup } from '@yoyo-org/mockr';
 
 interface User { id: number; name: string; role: string }
 
 type Endpoints = { '/api/users': User[] };
 
+const api = mockGroup<Endpoints>()
+  .data('/api/users', [
+    { id: 1, name: 'Alice', role: 'admin' },
+    { id: 2, name: 'Bob', role: 'viewer' },
+  ])
+  .get('/api/users', {
+    fn: (_req, ctx) => ctx.endpoint('/api/users').data,
+    scenarios: {
+      empty: () => [],
+      down: (_req, ctx) => ctx.error(503, 'Service temporarily unavailable'),
+    },
+  })
+  .done();
+
+mockr({ port: 3006, groups: [api] });
+```
+
+```bash
+# default — Alice + Bob
+curl -s http://localhost:3006/api/users
+
+# "empty" via header
+curl -s http://localhost:3006/api/users -H 'x-mockr-scenario: empty'    # []
+
+# "down" via query param — 503
+curl -s 'http://localhost:3006/api/users?_scenario=down' -i
+```
+
+## Config-level scenarios
+
+When you need to reshape *several* endpoints at once — and keep that state until you switch away — use the config-level `scenarios` map. Each entry is a setup function; on activation mockr resets every endpoint, then runs it. Switch via `server.scenario(name)` programmatically or `POST /__mockr/scenario { "name": "..." }` from the browser.
+
+```ts
+import { mockr, mockGroup } from '@yoyo-org/mockr';
+
+interface User { id: number; name: string; role: string }
+
+type Endpoints = { '/api/users': User[] };
+
+const api = mockGroup<Endpoints>()
+  .data('/api/users', [
+    { id: 1, name: 'Alice', role: 'admin' },
+    { id: 2, name: 'Bob', role: 'viewer' },
+  ])
+  .done();
+
 mockr<Endpoints>({
   port: 3006,
-  endpoints: [
-    {
-      url: '/api/users',
-      data: [
-        { id: 1, name: 'Alice', role: 'admin' },
-        { id: 2, name: 'Bob', role: 'viewer' },
-      ],
-    },
-  ],
+  groups: [api],
   scenarios: {
     empty: (s) => { s.endpoint('/api/users').clear(); },
 

@@ -1,6 +1,6 @@
 # 09 — `ctx.forward()`
 
-Sits between `handler()` (synthetic) and pure proxy (passthrough): forward the current request to the configured upstream, mutate the response, return it.
+Sits between a synthetic handler and pure proxy (passthrough): forward the current request to the configured upstream, mutate the response, return it.
 
 ::: tip Run this chapter in 30 seconds
 1. **[Open in StackBlitz →](https://stackblitz.com/github/yoyo-67/mockr?file=examples/09-forward/server.ts)** — full Node sandbox in your browser, no install.
@@ -28,52 +28,45 @@ Throws if `proxy.target` is not configured.
 ## Three patterns
 
 ```ts
-import { mockr, handler } from '@yoyo-org/mockr';
+import { mockr, mockGroup } from '@yoyo-org/mockr';
 
 interface Post { id: number; title: string; body: string }
 interface Todo { id: number; completed: boolean; title: string }
 
+type Endpoints = {
+  '/posts': Post[];
+  '/todos/:id': Todo & { _localTag: string };
+  '/users/:id': { id: string; stubbed: boolean };
+};
+
+const api = mockGroup<Endpoints>()
+  // 1. Filter a list — drop items from upstream.
+  .get('/posts', async (_req, ctx) => {
+    const res = await ctx.forward<Post[]>();
+    res.body = res.body.filter((p) => p.title.length > 40);
+    return res;
+  })
+
+  // 2. Enrich a record — attach a derived field.
+  .get('/todos/:id', async (_req, ctx) => {
+    const res = await ctx.forward();
+    (res.body as Todo & { _localTag: string })._localTag = 'enriched-locally';
+    return res;
+  })
+
+  // 3. Conditional forward — synthetic stub for one query flag, live otherwise.
+  .get('/users/:id', async (req, ctx) => {
+    if (req.query.stub) {
+      return { id: req.params.id, stubbed: true };
+    }
+    return ctx.forward();
+  })
+  .done();
+
 mockr({
   port: 3009,
   proxy: { target: 'https://jsonplaceholder.typicode.com' },
-  endpoints: [
-    // 1. Filter a list — drop items from upstream.
-    {
-      url: '/posts',
-      handler: handler({
-        fn: async (_req, ctx) => {
-          const res = await ctx.forward<Post[]>();
-          res.body = res.body.filter((p) => p.title.length > 40);
-          return res;
-        },
-      }),
-    },
-
-    // 2. Enrich a record — attach a derived field.
-    {
-      url: '/todos/:id',
-      handler: handler({
-        fn: async (_req, ctx) => {
-          const res = await ctx.forward();
-          (res.body as Todo & { _localTag: string })._localTag = 'enriched-locally';
-          return res;
-        },
-      }),
-    },
-
-    // 3. Conditional forward — synthetic stub for one query flag, live otherwise.
-    {
-      url: '/users/:id',
-      handler: handler({
-        fn: async (req, ctx) => {
-          if (req.query.stub) {
-            return { status: 200, body: { id: req.params.id, stubbed: true } };
-          }
-          return ctx.forward();
-        },
-      }),
-    },
-  ],
+  groups: [api],
 });
 ```
 

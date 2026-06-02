@@ -5,6 +5,7 @@ Override config from the command line — no need to maintain dev / prod variant
 ```bash
 npx tsx mock.ts --port 3000
 npx tsx mock.ts --proxy https://api.example.com
+npx tsx mock.ts --verify
 npx tsx mock.ts --recorder
 npx tsx mock.ts --tui
 npx tsx mock.ts --help
@@ -14,6 +15,8 @@ npx tsx mock.ts --help
 |---|---|
 | `--port <n>` | Override `mockr({ port })`. |
 | `--proxy <url>` | Set / replace `proxy.target`. Enables proxy passthrough. |
+| `--target <url>` | Alias for `--proxy`. |
+| `--verify` | Check every served body against its `responseSchema`. See [Verify](/reference/verify). |
 | `--recorder` | Force-enable the recorder. |
 | `--tui` | Boot the terminal UI. |
 | `--help`, `-h` | Print usage. |

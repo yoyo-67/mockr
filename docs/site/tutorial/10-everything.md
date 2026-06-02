@@ -18,7 +18,7 @@ Each previous chapter isolates one feature. Real apps stack several. This one sh
 | Layer | Provided by |
 |---|---|
 | Source-of-truth data | `dataFile` (rooms.json, messages.json) |
-| Public API | `handler({ fn })` reading `ctx.endpoint('/internal/*')` |
+| Public API | `mockGroup()` verb handlers reading `ctx.endpoint('/internal/*')` |
 | URL params | `:roomId`, `*` patterns |
 | Cross-cutting concerns | `logger` + `delay` + `errorInjection` + custom `post` middleware |
 | Variants | scenarios `busy` / `empty` |

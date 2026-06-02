@@ -35,10 +35,10 @@ features:
       Switch between server states (`empty` / `crowded` / `down`) for
       demos, e2e tests, and reproducing edge cases.
   - icon: 🛡️
-    title: Validate with zod
+    title: Typed builder + zod
     details: |
-      `handler({ body, query, params, fn })` flows zod schema output into
-      `req.body` / `req.query` / `req.params` — typed, no casts.
+      `mockGroup<E>()` infers the response body, path params, and `ctx` from
+      the URL. Add zod `body` / `query` / `params` — typed `req`, no casts.
   - icon: 🧩
     title: Chrome extension recorder
     details: |
@@ -59,16 +59,15 @@ npx tsx mock.ts
 ```
 
 ```ts
-import { mockr } from '@yoyo-org/mockr';
+import { mockr, mockGroup } from '@yoyo-org/mockr';
 
-await mockr({
-  port: 4000,
-  endpoints: [
-    { url: '/api/todos', data: [
-      { id: 1, title: 'Buy milk', done: false },
-    ]},
-  ],
-});
+type Endpoints = { '/api/todos': { id: number; title: string; done: boolean }[] };
+
+const todos = mockGroup<Endpoints>()
+  .data('/api/todos', [{ id: 1, title: 'Buy milk', done: false }])
+  .done();
+
+await mockr({ port: 4000, groups: [todos] });
 ```
 
 That's it. `GET /api/todos` returns the array. `POST /api/todos` inserts. `PATCH /api/todos/1` updates. `DELETE /api/todos/1` removes. No glue code.

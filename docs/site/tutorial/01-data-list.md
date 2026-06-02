@@ -1,6 +1,6 @@
 # 01 — Data list
 
-`data: T[]` turns into a list endpoint with full CRUD. No glue code.
+`.data(url, T[])` turns into a list endpoint with full CRUD. No glue code.
 
 ::: tip Run this chapter in 30 seconds
 1. **[Open in StackBlitz →](https://stackblitz.com/github/yoyo-67/mockr?file=examples/01-data-list/server.ts)** — full Node sandbox in your browser, no install.
@@ -13,12 +13,12 @@
 
 ## Concept
 
-Define an array of items. `mockr` registers GET / POST / PUT / PATCH / DELETE on the URL. Mutations persist in memory across requests.
+Seed an array of items. `mockr` registers GET / POST / PUT / PATCH / DELETE on the URL. Mutations persist in memory across requests.
 
 ## Code
 
 ```ts
-import { mockr } from '@yoyo-org/mockr';
+import { mockr, mockGroup } from '@yoyo-org/mockr';
 
 interface Todo {
   id: number;
@@ -30,19 +30,15 @@ type Endpoints = {
   '/api/todos': Todo[];
 };
 
-mockr<Endpoints>({
-  port: 3001,
-  endpoints: [
-    {
-      url: '/api/todos',
-      data: [
-        { id: 1, title: 'Buy milk', done: false },
-        { id: 2, title: 'Write tests', done: true },
-        { id: 3, title: 'Deploy to prod', done: false },
-      ],
-    },
-  ],
-});
+const todos = mockGroup<Endpoints>()
+  .data('/api/todos', [
+    { id: 1, title: 'Buy milk', done: false },
+    { id: 2, title: 'Write tests', done: true },
+    { id: 3, title: 'Deploy to prod', done: false },
+  ])
+  .done();
+
+mockr({ port: 3001, groups: [todos] });
 ```
 
 ## Try it

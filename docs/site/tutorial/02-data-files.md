@@ -20,6 +20,8 @@ Move state out of the server file into JSON. Edit the JSON; the endpoint reloads
 
 Wrap the path with `file<T>('./x.json')` to carry the JSON shape into the handle's type without committing to a static `import` (so JSON edits keep hot-reloading).
 
+File-backed endpoints are authored as plain endpoint defs in `endpoints: [...]` — the `mockGroup()` builder doesn't emit `dataFile`. They sit alongside any builder `groups:`.
+
 ## Code
 
 ```ts
@@ -33,7 +35,7 @@ type Endpoints = {
   '/api/config': AppConfig;
 };
 
-mockr<Endpoints>({
+mockr({
   port: 3002,
   endpoints: [
     { url: '/api/products', dataFile: file<Product[]>('./products.json') },

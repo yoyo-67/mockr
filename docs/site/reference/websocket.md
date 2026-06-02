@@ -107,22 +107,18 @@ The handle's view of a connected client. `state` is `unknown` from the cross-end
 
 ## Cross-endpoint broadcast
 
-A common pattern: HTTP webhook → fan-out to WS subscribers.
+A common pattern: HTTP webhook → fan-out to WS subscribers. The HTTP side is an ordinary builder route; `ctx.endpoint('/ws/orders')` resolves to the `WsHandle` because that URL was defined with `ws({...})`.
 
 ```ts
-{
-  url: '/api/webhooks/order-shipped',
-  method: 'POST',
-  handler: handler({
+mockGroup<Endpoints>()
+  .post('/api/webhooks/order-shipped', {
+    body: z.object({ orderId: z.string() }),
     fn: (req, ctx) => {
-      ctx.endpoint('/ws/orders').broadcast({
-        type: 'shipped',
-        orderId: (req.body as { orderId: string }).orderId,
-      });
-      return { body: { ok: true } };
+      ctx.endpoint('/ws/orders').broadcast({ type: 'shipped', orderId: req.body.orderId });
+      return { ok: true };
     },
-  }),
-}
+  })
+  .done();
 ```
 
 ## Brand symbols

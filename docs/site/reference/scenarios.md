@@ -2,13 +2,39 @@
 
 Named server states. Useful for demos, e2e tests, and reproducing edge cases.
 
-## Define
+## Per-endpoint scenarios
+
+A verb spec can carry named alternates next to its `fn`. Each is a full handler with the same `(req, ctx)` signature and return rules:
+
+```ts
+mockGroup<Endpoints>()
+  .get('/api/users', {
+    scenarios: {
+      empty: () => [],
+      boom:  (_req, ctx) => ctx.error(503, 'service down'),
+    },
+    fn: (_req, ctx) => ctx.endpoint('/internal/users').data,
+  })
+  .done();
+```
+
+mockr picks one per request from the `x-mockr-scenario` header or the `?_scenario=<name>` query param; with neither (or an unknown name) it falls back to `fn`.
+
+```http
+GET /api/users                         # → fn (baseline)
+GET /api/users?_scenario=empty         # → []
+GET /api/users   x-mockr-scenario: boom # → 503
+```
+
+Because the selector rides on the request, a Cypress / Playwright test can flip one endpoint per call — no server state to set or unwind. Different endpoints stay independent.
+
+## Config-level scenarios
+
+The config-level `scenarios` map mutates the *whole server* by name — patch stores, swap handlers, take a route down:
 
 ```ts
 await mockr({
-  endpoints: [
-    { url: '/api/users', data: [{ id: 1, name: 'Alice' }] },
-  ],
+  groups: [mocks],
   scenarios: {
     empty: (s) => { s.endpoint('/api/users').clear(); },
     crowded: (s) => {

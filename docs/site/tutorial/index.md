@@ -4,10 +4,10 @@ Eleven short chapters. Each isolates one feature, simplest first. Code in every 
 
 | # | Chapter | Feature |
 |---|---|---|
-| [01](./01-data-list) | Data list | `data: T[]` → free CRUD |
+| [01](./01-data-list) | Data list | `.data(url, T[])` → free CRUD |
 | [02](./02-data-files) | Data files | `dataFile` + `file<T>` + hot-reload |
 | [03](./03-cross-endpoint) | Cross-endpoint | `ctx.endpoint(url)` joins |
-| [04](./04-handlers-zod) | Handlers + zod | `handler({ body, query, params, fn })` |
+| [04](./04-handlers-zod) | Handlers + zod | `.post(url, { body, query, params, fn })` |
 | [05](./05-middleware) | Middleware | `logger` / `delay` / `auth` + custom `post` |
 | [06](./06-scenarios) | Scenarios | named server states |
 | [07](./07-multi-method) | Multi-method | `methods: { GET, POST, ... }` |

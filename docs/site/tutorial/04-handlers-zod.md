@@ -1,6 +1,6 @@
 # 04 — Handlers + zod
 
-`handler({ body, query, params, fn })` accepts optional zod schemas. Schema output flows into `req` so `req.body`, `req.query`, `req.params` are typed without manual casts.
+A verb spec — `.post(url, { body, query, params, fn })` — accepts optional zod schemas. Schema output flows into `req` so `req.body`, `req.query`, `req.params` are typed without manual casts.
 
 ::: tip Run this chapter in 30 seconds
 1. **[Open in StackBlitz →](https://stackblitz.com/github/yoyo-67/mockr?file=examples/04-handlers-zod/server.ts)** — full Node sandbox in your browser, no install.
@@ -18,45 +18,42 @@ Invalid requests get a `400` with the zod issue list before `fn` runs. Each slot
 ## Code
 
 ```ts
-import { mockr, handler } from '@yoyo-org/mockr';
+import { mockr, mockGroup } from '@yoyo-org/mockr';
 import { z } from 'zod';
 
-mockr({
-  port: 3004,
-  endpoints: [
-    {
-      url: '/api/orders',
-      method: 'POST',
-      handler: handler({
-        body: z.object({ user_id: z.string(), total: z.number().positive() }),
-        fn: (req) => {
-          // req.body.user_id is string, req.body.total is number — typed.
-          return { status: 201, body: { id: 'o-1', ...req.body } };
-        },
-      }),
-    },
+interface Order { id: string; user_id: string; total: number }
 
-    {
-      url: '/api/users/:userId/orders',
-      method: 'GET',
-      handler: handler({
-        params: z.object({ userId: z.string() }),
-        query: z.object({
-          status: z.enum(['pending', 'shipped']).optional(),
-          limit: z.coerce.number().min(1).max(100).optional(),
-        }),
-        fn: (req) => ({
-          body: {
-            user: req.params.userId,
-            status: req.query.status ?? 'all',
-            limit: req.query.limit ?? 20,
-          },
-        }),
-      }),
+type Endpoints = {
+  '/api/orders': Order;
+  '/api/users/:userId/orders': { user: string; status: string; limit: number };
+};
+
+const orders = mockGroup<Endpoints>()
+  .post('/api/orders', {
+    body: z.object({ user_id: z.string(), total: z.number().positive() }),
+    fn: (req, ctx) => {
+      // req.body.user_id is string, req.body.total is number — typed.
+      return ctx.created({ id: 'o-1', ...req.body });
     },
-  ],
-});
+  })
+  .get('/api/users/:userId/orders', {
+    params: z.object({ userId: z.string() }),
+    query: z.object({
+      status: z.enum(['pending', 'shipped']).optional(),
+      limit: z.coerce.number().min(1).max(100).optional(),
+    }),
+    fn: (req) => ({
+      user: req.params.userId,
+      status: req.query.status ?? 'all',
+      limit: req.query.limit ?? 20,
+    }),
+  })
+  .done();
+
+mockr({ port: 3004, groups: [orders] });
 ```
+
+For JSON-encoded query params, wrap the slot with `jsonParam(inner?)` (one value) or `jsonArrayParam(inner?)` (a repeatable `?k=..&k=..`) inside the `query` object — see [Query params](/reference/query-params).
 
 ## Try it
 

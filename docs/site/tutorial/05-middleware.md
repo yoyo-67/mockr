@@ -18,7 +18,26 @@ Middleware order matters — top of the array runs first. A `pre` that returns a
 ## Code
 
 ```ts
-import { mockr, handler, auth, delay, logger } from '@yoyo-org/mockr';
+import { mockr, mockGroup, auth, delay, logger } from '@yoyo-org/mockr';
+import { z } from 'zod';
+
+type Endpoints = {
+  '/api/health': { status: string };
+  '/api/login': { token: string };
+  '/api/secret': { flag: number };
+};
+
+const api = mockGroup<Endpoints>()
+  .data('/api/health', { status: 'ok' })
+  .post('/api/login', {
+    body: z.object({ email: z.string() }),
+    fn: (req, ctx) => {
+      if (req.body.email === 'admin@example.com') return { token: 'admin-token-123' };
+      return ctx.error(401, 'Invalid credentials');
+    },
+  })
+  .data('/api/secret', { flag: 42 })
+  .done();
 
 mockr({
   port: 3005,
@@ -38,21 +57,7 @@ mockr({
       }),
     },
   ],
-  endpoints: [
-    { url: '/api/health', data: { status: 'ok' } },
-    {
-      url: '/api/login',
-      method: 'POST',
-      handler: handler({
-        fn: (req) => {
-          const { email } = req.body as { email: string };
-          if (email === 'admin@example.com') return { body: { token: 'admin-token-123' } };
-          return { status: 401, body: { error: 'Invalid credentials' } };
-        },
-      }),
-    },
-    { url: '/api/secret', data: { flag: 42 } },
-  ],
+  groups: [api],
 });
 ```
 

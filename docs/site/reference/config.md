@@ -5,10 +5,13 @@
 ```ts
 interface MockrConfig<E = Record<string, unknown>> {
   port?:        number;            // default: random free port
-  endpoints:    EndpointDef<E>[];
+  groups?:      EndpointDef<E>[][]; // mockGroup().done() results
+  endpoints?:   EndpointDef<E>[];   // lower-level defs (dataFile / ws)
   proxy?:       ProxyConfig;
   middleware?:  Middleware[];
   scenarios?:   Record<string, ScenarioSetup<E>>;
+  verify?:      boolean;
+  onDrift?:     (d: DriftReport) => void;
   recorder?:    RecorderOptions;
   tui?:         boolean;
   cors?:        boolean | CorsOptions; // permissive cors helper
@@ -18,13 +21,18 @@ interface MockrConfig<E = Record<string, unknown>> {
 | Field | Description |
 |---|---|
 | `port` | Listen port. Defaults to a random free one — read `server.port` after `await`. |
-| `endpoints` | Endpoint definitions — see [Endpoints reference](/reference/endpoints). |
+| `groups` | Array of [`mockGroup().done()`](/reference/builder) results. All groups share one `Endpoints` map, so they compose with no cast. The preferred multi-file path. |
+| `endpoints` | Lower-level array of [endpoint defs](/reference/endpoints). Use it for file-backed (`dataFile`) and WebSocket (`ws`) endpoints, which the builder doesn't emit. Can sit alongside `groups`. |
 | `proxy` | Pass-through target for unmatched routes. See [Proxy](/reference/proxy). |
 | `middleware` | Pre-routing pipeline. See [Middleware](/reference/middleware). |
 | `scenarios` | Named server states. See [Scenarios](/reference/scenarios). |
+| `verify` | Validate every served body against its endpoint's `responseSchema`; mismatches go to `onDrift` and a console warning. See [Verify](/reference/verify). |
+| `onDrift` | Callback for `verify` mismatches — `({ url, method, issues })`. |
 | `recorder` | Enables the recorder + Chrome extension hand-off. See [Recorder](/reference/recorder). |
 | `tui` | Auto-launch the terminal UI on start. |
 | `cors` | Convenience flag — set `true` for permissive CORS, or pass an options object. |
+
+Provide `groups`, `endpoints`, or both — at least one source of routes.
 
 ## Async return
 
@@ -35,21 +43,25 @@ const server = await mockr<Endpoints>({ /* ... */ });
 console.log('listening on', server.port);
 ```
 
-## `endpoints<E>([...])` helper
+## Composing across files
 
-Per-group runtime no-op that type-checks endpoint definitions in a separate file:
+Each file exports a [`mockGroup<Endpoints>().done()`](/reference/builder) over one shared `Endpoints` map, and the server lists them under `groups`:
 
 ```ts
 // src/mocks/cart.ts
-import { endpoints } from '@yoyo-org/mockr';
+import { mockGroup } from '@yoyo-org/mockr';
 import type { Endpoints } from '../types.js';
 
-export const cartMocks = endpoints<Endpoints>([
-  { url: '/api/cart', data: [] },
-]);
+export const cartMocks = mockGroup<Endpoints>()
+  .data('/internal/cart', [])
+  .get('/api/cart', (_req, ctx) => ctx.endpoint('/internal/cart').data)
+  .done();
+
+// src/server.ts
+await mockr<Endpoints>({ groups: [cartMocks, todoMocks] });
 ```
 
-Top-level `mockr<E>(...)` keeps the explicit generic — groups compose into it.
+Because every group is typed against the same map, they compose with no `EndpointDef<any>` cast. File-backed (`dataFile`) and WebSocket (`ws`) defs go in `endpoints` alongside the groups.
 
 ## `file<T>(path)`
 
