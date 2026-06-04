@@ -706,6 +706,17 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     return { status: res.status, body: parsedBody, headers: resHeaders };
   }
 
+  // Bridges per-request context from handleRequest to the top-level catch
+  // (which only has `req` in scope) so a thrown 500 can name the request and
+  // the last forward.
+  interface RequestErrorContext {
+    method: string;
+    path: string;
+    fullUrl: string;
+    lastForward: { path: string; status: number } | null;
+  }
+  const requestErrorContext = new WeakMap<IncomingMessage, RequestErrorContext>();
+
   // Request handler
   async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     const start = performance.now();
@@ -724,6 +735,11 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     // Per-request ctx — augments shared `handlerContext` with `forward` that
     // captures the current request and dispatches to the configured proxy.
     let forwardUsed = false;
+    // Per-request context the top-level error handler reads to enrich a thrown
+    // 500: which request failed, and the last ctx.forward() result (a non-2xx
+    // forward is the usual reason a handler then crashes reading the body).
+    const errCtx: RequestErrorContext = { method, path, fullUrl, lastForward: null };
+    requestErrorContext.set(req, errCtx);
     const ctx: HandlerContext = {
       endpoint: handlerContextEndpoint,
       forward: (async (patch?: import('./types.js').ForwardPatch) => {
@@ -749,6 +765,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
         const cacheKey = { method: fwdMethod, path: getPath(fwdPath), query: parseQuery(fwdPath) };
         const cached = memorySessions.lookupResponse(cacheKey);
         if (cached) {
+          errCtx.lastForward = { path: cacheKey.path, status: cached.status };
           return {
             status: cached.status,
             body: structuredClone(cached.body),
@@ -756,8 +773,17 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
           } as { status: number; body: unknown; headers: Record<string, string | string[]> };
         }
 
-        const result = await handleProxy(fwdMethod, fwdPath, fwdHeaders, fwdBody);
-        if (!result) throw new Error('ctx.forward() proxy target unreachable');
+        let result: HandlerResult | null;
+        try {
+          result = await handleProxy(fwdMethod, fwdPath, fwdHeaders, fwdBody);
+        } catch (e) {
+          // fetch() rejects (ECONNREFUSED, DNS, TLS) before we ever see a status.
+          // Raw "fetch failed" is useless — name the call, the target, and the cause.
+          const cause = e instanceof Error ? e.message : String(e);
+          throw new Error(`ctx.forward() could not reach proxy target ${proxyTarget}${cacheKey.path}: ${cause}`, { cause: e });
+        }
+        if (!result) throw new Error(`ctx.forward() proxy target unreachable: ${proxyTarget}`);
+        errCtx.lastForward = { path: cacheKey.path, status: result.status ?? 200 };
 
         // Record AFTER fetch — snapshot upstream pre-mutation. Handler will
         // mutate `result.body` next; we deep-copy so the cached entry is
@@ -973,7 +999,14 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
 
     // 3. Try proxy
     if (!handlerResult && config.proxy && proxyEnabled) {
-      handlerResult = await handleProxy(method, fullUrl, reqHeaders, rawBody);
+      try {
+        handlerResult = await handleProxy(method, fullUrl, reqHeaders, rawBody);
+      } catch (e) {
+        // fetch() rejects (ECONNREFUSED, DNS, TLS) before a status exists.
+        // Name the proxy target + cause instead of a bare "fetch failed".
+        const cause = e instanceof Error ? e.message : String(e);
+        throw new Error(`proxy could not reach ${proxyTarget}${fullUrl}: ${cause}`, { cause: e });
+      }
       if (handlerResult) {
         source = 'proxy';
         const ctHeader = handlerResult.headers && handlerResult.headers['content-type'];
@@ -1056,8 +1089,22 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const stack = err instanceof Error ? err.stack : undefined;
+      const ectx = requestErrorContext.get(req);
+      const errorBody: Record<string, unknown> = ectx
+        ? { error: `Handler for ${ectx.method} ${ectx.path} threw: ${message}`, method: ectx.method, path: ectx.path }
+        : { error: message };
+      if (ectx?.lastForward) {
+        const fwd = ectx.lastForward;
+        errorBody.forward = { path: fwd.path, status: fwd.status };
+        if (fwd.status < 200 || fwd.status >= 300) {
+          // Most common cause of a handler crash: it read a field off a body
+          // shape that only exists on a 2xx response.
+          errorBody.hint = `ctx.forward() to ${fwd.path} returned ${fwd.status} (non-2xx). The handler likely read a field that only exists on a successful response body — guard on the forwarded status before using the body.`;
+        }
+      }
+      if (stack) errorBody.stack = stack;
       console.error(`[mockr] Error handling ${req.method} ${req.url}:`, err);
-      sendJson(res, 500, { error: message, stack });
+      sendJson(res, 500, errorBody);
     }
   });
 
