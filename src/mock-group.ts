@@ -1,4 +1,5 @@
 import { HANDLER_SPEC_BRAND, type HandlerSpec } from './handler.js';
+import { isHydrate, type HydrateLoader, type HydrateFn } from './hydrate.js';
 import type {
   EndpointDef,
   EndpointDelay,
@@ -109,6 +110,7 @@ interface VerbEntry {
 interface UrlEntry {
   url: string;
   data?: unknown;
+  load?: HydrateFn<unknown>;
   verbs: VerbEntry[];
 }
 
@@ -213,10 +215,14 @@ export interface MockGroup<TEndpoints, P extends string = ''> {
   put: VerbMethod<TEndpoints, P, MockGroup<TEndpoints, P>>;
   patch: VerbMethod<TEndpoints, P, MockGroup<TEndpoints, P>>;
   delete: VerbMethod<TEndpoints, P, MockGroup<TEndpoints, P>>;
-  /** Register an in-memory store with default CRUD, seeded and typed by the map. */
+  /**
+   * Register an in-memory store with default CRUD, seeded and typed by the map.
+   * Pass a `hydrate(loader)` instead of a static seed to fill the store once
+   * from the loader on first access, then own it (CRUD mutations stick).
+   */
   data<S extends SubUrl<TEndpoints, P> & string>(
     url: S,
-    seed: TEndpoints[FullKey<TEndpoints, P, S>],
+    seed: TEndpoints[FullKey<TEndpoints, P, S>] | HydrateLoader<TEndpoints[FullKey<TEndpoints, P, S>]>,
   ): MockGroup<TEndpoints, P>;
   /** Scope every later registration under an additional URL prefix. */
   prefix<P2 extends string>(prefix: P2): MockGroup<TEndpoints, `${P}${P2}`>;
@@ -288,7 +294,14 @@ export function mockGroup<TEndpoints = Record<string, unknown>>(): MockGroup<TEn
       if (entry.data !== undefined) {
         throw new Error(`mockGroup: duplicate data store ${fullUrl}`);
       }
-      entry.data = seed;
+      if (isHydrate(seed)) {
+        // Hydrate loader: store stays an empty list until the loader fills it
+        // on first access (kind defaults to list). `load` carries the loader.
+        entry.data = [];
+        entry.load = seed.loader;
+      } else {
+        entry.data = seed;
+      }
       return group;
     },
     prefix(p) {
@@ -306,6 +319,7 @@ export function mockGroup<TEndpoints = Record<string, unknown>>(): MockGroup<TEn
 
         if (hasData) {
           const def: Record<string, unknown> = { url, data: entry.data };
+          if (entry.load !== undefined) def.load = entry.load;
           if (verbs.length > 0) {
             def.methods = Object.fromEntries(verbs.map((v) => [v.verb, v.spec]));
           }

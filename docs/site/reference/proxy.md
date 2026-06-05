@@ -61,11 +61,29 @@ const upstream = await ctx.forward({
 });
 ```
 
+## `hydrate()` — forward once, then own
+
+Wrap a `.data` loader in `hydrate(...)` to seed the store from upstream **once**, then serve and mutate it locally. Unlike `ctx.forward()` (which re-runs every request), a hydrated store is fetched a single time on first read — after that, local CRUD mutations stick.
+
+```ts
+import { mockr, mockGroup, hydrate } from '@yoyo-org/mockr';
+
+const api = mockGroup<{ '/api/todos': Todo[] }>()
+  .data('/api/todos', hydrate((_req, ctx) => ctx.forward<Todo[]>().then((r) => r.body)))
+  .done();
+
+await mockr({ proxy: { target: 'https://api.example.com' }, groups: [api] });
+// GET fills from upstream once; POST/PUT/PATCH/DELETE mutate the owned copy.
+```
+
+`server.endpoint(url).reset()` re-arms it (next read re-forwards). See the [builder reference](/reference/builder#hydrate) for the full behavior.
+
 ## When to use which
 
 | Goal | Tool |
 |---|---|
 | All unmatched routes → upstream | `proxy: { target }` |
 | Mock some routes, proxy the rest | `proxy: { target }` + matching `groups` |
-| Mock + augment one route | a `.get()` handler that returns `ctx.forward()` |
+| Mock + augment one route (every request) | a `.get()` handler that returns `ctx.forward()` |
+| Fetch real data once, then edit it locally | `.data(url, hydrate(loader))` |
 | Record traffic to map → mocks | `recorder` + Chrome extension |

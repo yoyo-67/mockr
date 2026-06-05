@@ -60,6 +60,16 @@ export interface InternalEndpoint {
   baselineDelay?: EndpointDelay;
   /** WebSocket runtime when the endpoint was declared with `ws: ws({...})`. */
   wsRuntime?: WsRuntime;
+  /**
+   * Hydrate loader (from `hydrate(loader)`). Runs once on first access to fill
+   * the store, then the store is owned (CRUD mutations stick). `null` for a
+   * static `data` store.
+   */
+  load?: ((req: MockrRequest, ctx: HandlerContext<any>) => unknown | Promise<unknown>) | null;
+  /** True once the hydrate loader has filled the store (or any write occurred). */
+  hydrated?: boolean;
+  /** In-flight hydrate promise — concurrent first reads share it (loader runs once). */
+  hydrating?: Promise<void> | null;
 }
 
 interface ControlRoutesConfig {

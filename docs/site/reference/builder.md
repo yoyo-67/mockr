@@ -21,6 +21,7 @@ await mockr({ port: 4000, groups: [todos] });
 |---|---|
 | `.get/.post/.put/.patch/.delete(url, def)` | Register a handler for `url` (a key of `Endpoints`). `def` is a function or a [verb spec](#verb-spec). |
 | `.data(url, seed)` | In-memory store, seeded + typed by the map. Array ⇒ list (full CRUD); object ⇒ record. |
+| `.data(url, hydrate(loader))` | Store filled **once** from `loader` on first read, then owned — local CRUD mutations stick. See [Hydrate](#hydrate). |
 | `.prefix(p)` | Scope later registrations under prefix `p`; sub-paths are constrained so `p + sub` is a key of `Endpoints`. Composable. |
 | `.done()` | Return `EndpointDef[]` for `mockr({ groups })` (or `endpoints`). |
 
@@ -45,6 +46,35 @@ mockGroup<Endpoints>()
   .get('/:id/stats/', (req) => ({ project_id: req.params.id, progress: 87 }))
   .done();
 ```
+
+## Hydrate
+
+Wrap a `.data` loader in `hydrate(...)` to **seed the store from upstream (or a file, or inline) once**, then own it. The first read runs the loader and fills the store; later reads serve the store; `POST`/`PUT`/`PATCH`/`DELETE` mutate it and the changes stick.
+
+```ts
+import { mockr, mockGroup, hydrate } from '@yoyo-org/mockr';
+
+const api = mockGroup<{ '/api/todos': Todo[] }>()
+  // fetch the real list once, then it's a local mutable store
+  .data('/api/todos', hydrate((_req, ctx) => ctx.forward<Todo[]>().then((r) => r.body)))
+  .done();
+
+await mockr({ proxy: { target: 'https://api.example.com' }, groups: [api] });
+```
+
+```
+GET  /api/todos  → forwards upstream once → [A, B]          (owned)
+POST /api/todos  → default CRUD append    → [A, B, C]
+GET  /api/todos  → serves the store, NO re-forward → [A, B, C]
+```
+
+- **Without `hydrate`**, a loader runs every request (live; mutations are clobbered on the next read).
+- The loader gets the full `ctx` (incl. `ctx.forward()`) — **proxy-agnostic**: it can read a file or return inline data instead.
+- A write *before* the first read latches ownership without loading (your write wins; upstream isn't fetched).
+- `server.endpoint(url).reset()` re-arms — the next read re-loads.
+- Concurrent first reads share one in-flight load (the loader runs exactly once).
+
+Distinct from a [mem-session](/reference/recorder) (a global, immutable record/replay cache) — `hydrate` produces owned, CRUD-mutable endpoint data, latched per-endpoint until `reset()`.
 
 ## Handler return
 

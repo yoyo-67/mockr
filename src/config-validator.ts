@@ -7,6 +7,7 @@ const KNOWN_KEYS = new Set([
   'url',
   'method',
   'data',
+  'load',
   'dataFile',
   'handler',
   'methods',

@@ -106,6 +106,11 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       url: string | RegExp;
       method?: string;
       data: unknown;
+      /**
+       * Hydrate loader (from `hydrate(loader)`). When present, the store is
+       * filled once from the loader on first access, then owned (CRUD sticks).
+       */
+      load?: (req: MockrRequest, ctx: HandlerContext<TEndpoints>) => unknown | Promise<unknown>;
       idKey?: string;
       methods?: MethodMap<TEndpoints>;
       delay?: EndpointDelay;

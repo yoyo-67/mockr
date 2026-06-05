@@ -98,6 +98,29 @@ Forwarded requests log with a third tag (`mock` / `->` / `fwd`):
   mock  GET    200 /users/1?stub=1 1ms
 ```
 
+## Hydrate — forward once, then own
+
+The patterns above re-forward on **every** request. To fetch the real data **once** and then treat it as a local, mutable store, wrap a `.data` loader in `hydrate(...)`:
+
+```ts
+import { mockr, mockGroup, hydrate } from '@yoyo-org/mockr';
+
+const api = mockGroup<{ '/api/todos': Todo[] }>()
+  // first GET forwards upstream → fills the store → owned from then on
+  .data('/api/todos', hydrate((_req, ctx) => ctx.forward<Todo[]>().then((r) => r.body)))
+  .done();
+
+mockr({ port: 3009, proxy: { target: 'https://jsonplaceholder.typicode.com' }, groups: [api] });
+```
+
+```
+GET  /api/todos  → fwd upstream once → [A, B]
+POST /api/todos  → default CRUD       → [A, B, C]
+GET  /api/todos  → store, no re-fwd   → [A, B, C]
+```
+
+Mutations stick because `hydrate` fills the endpoint's own store; default CRUD (`POST`/`PUT`/`PATCH`/`DELETE`) mutates that same store. `server.endpoint('/api/todos').reset()` re-arms it. The loader is proxy-agnostic — it can read a file or return inline data instead of forwarding. Full behavior: [builder reference → Hydrate](/reference/builder#hydrate).
+
 ## Mem-session friendly
 
 `ctx.forward()` participates in mem-sessions: GET/HEAD upstream responses cache during `record`, replay serves from cache without hitting upstream. Handler mutation always re-runs on a clone of the cached body — cache stays clean across iterations.

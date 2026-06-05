@@ -262,6 +262,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       const key = def.idKey || 'id';
       warnIfMissingIdKey(urlStr, def.data, key);
       const ep = pushDataEndpoint(def.url, matcher, def.method, def.data, key);
+      if (def.load) { ep.load = def.load as InternalEndpoint['load']; ep.hydrated = false; }
       if (def.methods) ep.methods = def.methods as InternalEndpoint['methods'];
       if ('delay' in def && def.delay !== undefined) {
         ep.delay = def.delay;
@@ -411,6 +412,15 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
         }
         if (prop === 'delay') {
           return ep.delay ?? null;
+        }
+        // Re-arm a hydrated store: reset() clears the latch so the next read
+        // re-runs the loader (then restores the baseline as usual).
+        if (prop === 'reset' && ep.load) {
+          return () => {
+            ep.hydrated = false;
+            ep.hydrating = null;
+            (target as { reset: () => void }).reset();
+          };
         }
         return Reflect.get(target, prop, receiver);
       },
@@ -936,6 +946,30 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
         if (epUrl) {
           if (path === epUrl || path.startsWith(epUrl + '/')) {
             if (ep.method && ep.method.toUpperCase() !== method) continue;
+            if (ep.load && !ep.hydrated) {
+              // Read triggers the loader; a write before any read latches
+              // ownership without loading (the write owns the store as-is).
+              if (method === 'GET' || method === 'HEAD') {
+                // In-flight guard: concurrent first reads share one promise so
+                // the loader (and its forward) runs exactly once.
+                if (!ep.hydrating) {
+                  const load = ep.load;
+                  ep.hydrating = (async () => {
+                    const loaded = await load(fakeReq, ctx);
+                    if (ep.listHandle) {
+                      ep.listHandle.data = loaded as Record<string, unknown>[];
+                    } else {
+                      const rec = recordHandles.get(ep);
+                      if (rec) rec.replace(loaded as object);
+                    }
+                    ep.hydrated = true;
+                  })().finally(() => { ep.hydrating = null; });
+                }
+                await ep.hydrating;
+              } else {
+                ep.hydrated = true;
+              }
+            }
             if (ep.listHandle) {
               handlerResult = handleListCrud(ep, method, path, body);
             } else if (recordHandles.has(ep)) {
