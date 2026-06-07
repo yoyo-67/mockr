@@ -21,7 +21,7 @@ await mockr({ port: 4000, groups: [todos] });
 |---|---|
 | `.get/.post/.put/.patch/.delete(url, def)` | Register a handler for `url` (a key of `Endpoints`). `def` is a function or a [verb spec](#verb-spec). |
 | `.data(url, seed)` | In-memory store, seeded + typed by the map. Array ⇒ list (full CRUD); object ⇒ record. |
-| `.data(url, hydrate(loader))` | Store filled **once** from `loader` on first read, then owned — local CRUD mutations stick. See [Hydrate](#hydrate). |
+| `.data(url, loader)` | Pass a **function** `(req, ctx) => T \| Promise<T>` — computed **once** on first read, then owned (local CRUD sticks). See [Loaders & partitions](#loaders-partitions). |
 | `.prefix(p)` | Scope later registrations under prefix `p`; sub-paths are constrained so `p + sub` is a key of `Endpoints`. Composable. |
 | `.done()` | Return `EndpointDef[]` for `mockr({ groups })` (or `endpoints`). |
 
@@ -47,34 +47,40 @@ mockGroup<Endpoints>()
   .done();
 ```
 
-## Hydrate
+## Loaders & partitions
 
-Wrap a `.data` loader in `hydrate(...)` to **seed the store from upstream (or a file, or inline) once**, then own it. The first read runs the loader and fills the store; later reads serve the store; `POST`/`PUT`/`PATCH`/`DELETE` mutate it and the changes stick.
+Pass a **function** to `.data` to **compute the store once** from upstream (or a file, or inline), then own it. The first read runs the loader and fills the store; later reads serve the store; `POST`/`PUT`/`PATCH`/`DELETE` mutate it and the changes stick.
 
 ```ts
-import { mockr, mockGroup, hydrate } from '@yoyo-org/mockr';
-
 const api = mockGroup<{ '/api/todos': Todo[] }>()
   // fetch the real list once, then it's a local mutable store
-  .data('/api/todos', hydrate((_req, ctx) => ctx.forward<Todo[]>().then((r) => r.body)))
+  .data('/api/todos', (_req, ctx) => ctx.forward<Todo[]>().then((r) => r.body))
   .done();
 
 await mockr({ proxy: { target: 'https://api.example.com' }, groups: [api] });
 ```
 
 ```
-GET  /api/todos  → forwards upstream once → [A, B]          (owned)
-POST /api/todos  → default CRUD append    → [A, B, C]
-GET  /api/todos  → serves the store, NO re-forward → [A, B, C]
+GET  /api/todos  → loader runs once → [A, B]               (owned)
+POST /api/todos  → default CRUD append → [A, B, C]
+GET  /api/todos  → serves the store, loader NOT re-run → [A, B, C]
 ```
 
-- **Without `hydrate`**, a loader runs every request (live; mutations are clobbered on the next read).
-- The loader gets the full `ctx` (incl. `ctx.forward()`) — **proxy-agnostic**: it can read a file or return inline data instead.
-- A write *before* the first read latches ownership without loading (your write wins; upstream isn't fetched).
-- `server.endpoint(url).reset()` re-arms — the next read re-loads.
+- **Static seed vs loader:** `.data(url, value)` is a static seed; `.data(url, fn)` runs `fn` once then owns the result. For a **live** endpoint (re-fetch every request) use a `.get` handler that calls `ctx.forward()` instead.
+- The loader gets the full `ctx` (incl. `ctx.forward()`) — **proxy-agnostic**: it can read a file or return inline data.
+- First access of **any kind** seeds — a write before any read seeds *then* applies the write (no empty store).
 - Concurrent first reads share one in-flight load (the loader runs exactly once).
 
-Distinct from a [mem-session](/reference/recorder) (a global, immutable record/replay cache) — `hydrate` produces owned, CRUD-mutable endpoint data, latched per-endpoint until `reset()`.
+### Partitioned by path params
+
+A `.data` URL with path params keeps **one owned store per resolved param-set** — `static` seeds and loaders alike (ADR-0002):
+
+```ts
+.data('/projects/:projectId/companies/', (req, ctx) =>
+  buildCompanies(req, ctx))                 // runs once per :projectId
+```
+
+`/projects/A/...` and `/projects/B/...` are independent stores, so per-project data never bleeds. Inside a handler, `ctx.endpoint('/projects/:projectId/companies/')` resolves to **the current request's** partition — so a create at a *different* URL that also carries `:projectId` grows the right project's store. `server.endpoint(url).reset()` re-arms every partition; accessing partitioned data outside a request (no params to resolve) throws.
 
 ## Handler return
 

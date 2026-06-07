@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@yoyo-org/mockr)](https://www.npmjs.com/package/@yoyo-org/mockr)
 
-Mock API server for frontend prototyping. Declare a typed `mockGroup()` builder — it infers each handler's body, `req.params`, and `ctx` from one endpoint map — seed an in-memory store for full CRUD, and compose groups across files. Mock the routes you're building, proxy the rest to a real backend with `ctx.forward()`, or `hydrate()` a store from the real backend once and mutate it locally. zod `body`/`query` validation, per-endpoint scenarios, WebSocket endpoints, and a Chrome extension that records traffic and maps it to local files.
+Mock API server for frontend prototyping. Declare a typed `mockGroup()` builder — it infers each handler's body, `req.params`, and `ctx` from one endpoint map — seed an in-memory store for full CRUD, and compose groups across files. Mock the routes you're building, proxy the rest to a real backend with `ctx.forward()`, or seed a store from the real backend once with `.data(url, loader)` and mutate it locally. zod `body`/`query` validation, per-endpoint scenarios, WebSocket endpoints, and a Chrome extension that records traffic and maps it to local files.
 
 **Docs: <https://yoyo-67.github.io/mockr/>**
 

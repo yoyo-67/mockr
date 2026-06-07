@@ -107,8 +107,9 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       method?: string;
       data: unknown;
       /**
-       * Hydrate loader (from `hydrate(loader)`). When present, the store is
-       * filled once from the loader on first access, then owned (CRUD sticks).
+       * Loader (from `.data(url, fn)`). When present, the store is filled once
+       * from the loader on first access, then owned (CRUD sticks). A param'd URL
+       * runs the loader once per resolved param-set (one store per partition).
        */
       load?: (req: MockrRequest, ctx: HandlerContext<TEndpoints>) => unknown | Promise<unknown>;
       idKey?: string;

@@ -25,8 +25,7 @@ export type { WsSpec, WsEndpoint, WsHandle, WsClient, WsFactoryOpts, WsConnectCt
 export { endpoints } from './endpoints-helper.js';
 export { mockGroup } from './mock-group.js';
 export type { MockGroup, VerbFn, VerbSpec, PathParams, GroupBody, TypedResult } from './mock-group.js';
-export { hydrate, isHydrate, HYDRATE_BRAND } from './hydrate.js';
-export type { HydrateLoader, HydrateFn } from './hydrate.js';
+export type { DataLoader } from './mock-group.js';
 export { jsonParam, jsonArrayParam } from './query-params.js';
 export { factory } from './factory.js';
 export { lintEndpoints } from './lint.js';

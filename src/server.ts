@@ -24,7 +24,7 @@ import { createMatcher } from './router.js';
 import { createRecorder, type Recorder } from './recorder.js';
 import { createMemorySessionStore, type MemorySessionStore } from './memory-session.js';
 import { parseQuery, getPath, readBody, parseBody, sendJson, sendRaw } from './http-utils.js';
-import { handleControlRoute, type InternalEndpoint } from './control-routes.js';
+import { handleControlRoute, type InternalEndpoint, type DataPartition } from './control-routes.js';
 import { validateConfig, formatErrors, checkDelayValue } from './config-validator.js';
 import { createDataFileWatcher } from './data-file-watcher.js';
 import { lintEndpoints } from './lint.js';
@@ -263,6 +263,16 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       warnIfMissingIdKey(urlStr, def.data, key);
       const ep = pushDataEndpoint(def.url, matcher, def.method, def.data, key);
       if (def.load) { ep.load = def.load as InternalEndpoint['load']; ep.hydrated = false; }
+      // ADR-0002: a data URL with path params is partitioned — one owned store
+      // per resolved param-set. Drop the single handle pushDataEndpoint made and
+      // route through `ep.partitions` instead.
+      if (typeof def.url === 'string' && /[:*]/.test(def.url)) {
+        ep.partitions = new Map();
+        ep.itemMatcher = createMatcher(def.url.replace(/\/?$/, '') + '/:__item');
+        ep.seed = def.data;
+        ep.listHandle = null;
+        recordHandles.delete(ep);
+      }
       if (def.methods) ep.methods = def.methods as InternalEndpoint['methods'];
       if ('delay' in def && def.delay !== undefined) {
         ep.delay = def.delay;
@@ -453,11 +463,34 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     return null;
   }
 
+  /**
+   * Admin handle for a partitioned endpoint accessed without a request (e.g.
+   * `server.endpoint(url)`). `reset()` re-arms every partition; data access
+   * throws — there's no request to pick a partition from (ADR-0002).
+   */
+  function partitionAdminHandle(ep: InternalEndpoint, url: string): EndpointHandle<unknown> {
+    const ambiguous = () => {
+      throw new Error(
+        `Endpoint '${url}' is partitioned (${ep.partitions!.size} partition(s)); can't resolve one without a request. ` +
+          `Access it inside a handler via ctx.endpoint(url), or use reset() to clear all partitions.`,
+      );
+    };
+    return new Proxy({} as EndpointHandle<unknown>, {
+      get(_t, prop) {
+        if (prop === 'reset') return () => ep.partitions!.clear();
+        if (prop === 'setDelay') return (v: EndpointDelay | null) => mutateEndpointDelay(ep, v);
+        if (prop === 'delay') return ep.delay ?? null;
+        return ambiguous();
+      },
+    });
+  }
+
   // Endpoint lookup for handlers
   function getEndpointHandle(url: string): EndpointHandle<unknown> {
     for (const ep of endpoints) {
       const epUrl = typeof ep.url === 'string' ? ep.url : ep.url.source;
       if (epUrl === url) {
+        if (ep.partitions) return partitionAdminHandle(ep, url);
         const handle = getEndpointHandleFor(ep);
         if (handle) return handle;
         throw new Error(`Endpoint '${url}' has no data handle (it is a handler-only or static endpoint).`);
@@ -466,10 +499,48 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     throw new Error(`Endpoint not found: ${url}`);
   }
 
-  // Module-level slice of HandlerContext shared across requests. Per-request
-  // augmentation (currently `forward`) happens in `handleRequest`.
-  const handlerContextEndpoint: HandlerContext['endpoint'] =
-    ((url: string) => getEndpointHandle(url)) as HandlerContext['endpoint'];
+  // ADR-0002: in-request `ctx.endpoint(url)` for a partitioned data endpoint
+  // resolves the partition from the CURRENT request's path params, so a
+  // cross-endpoint write (different URL, same `:projectId`) hits the same store.
+  function resolveEndpointHandle(
+    url: string,
+    currentParams: Record<string, string>,
+    ctx: HandlerContext,
+  ): EndpointHandle<unknown> {
+    const ep = endpoints.find((e) => (typeof e.url === 'string' ? e.url : e.url.source) === url);
+    if (!ep) throw new Error(`Endpoint not found: ${url}`);
+    if (!ep.partitions) return getEndpointHandle(url);
+
+    const resolved: Record<string, string> = {};
+    for (const name of paramNames(url)) {
+      const v = currentParams[name];
+      if (v === undefined) {
+        throw new Error(`ctx.endpoint('${url}'): cannot resolve partition — path param ':${name}' is not in the current request.`);
+      }
+      resolved[name] = v;
+    }
+    const part = getOrCreatePartition(ep, partitionKey(resolved));
+    if (!part.hydrated) {
+      // Seed synchronously: clone a static seed, or run a sync loader. An async
+      // loader can't be awaited here — require a read (GET) to seed it first.
+      if (!ep.load) {
+        fillPartition(ep, part, structuredClone(ep.seed));
+        part.hydrated = true;
+      } else {
+        const result = (ep.load as (r: MockrRequest, c: HandlerContext) => unknown)(
+          { ...({} as MockrRequest), params: resolved } as MockrRequest, ctx,
+        );
+        if (result instanceof Promise) {
+          throw new Error(`ctx.endpoint('${url}'): partition not seeded and its loader is async — read the endpoint (GET) before this cross-endpoint write.`);
+        }
+        fillPartition(ep, part, result);
+        part.hydrated = true;
+      }
+    }
+    const handle = part.listHandle ?? part.recordHandle;
+    if (!handle) throw new Error(`Endpoint '${url}' has no data handle.`);
+    return wrapWithDelayControl(ep, handle as object) as unknown as EndpointHandle<unknown>;
+  }
 
   /**
    * Build a scenario-flavored handle on top of an endpoint's underlying
@@ -585,6 +656,107 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     if (method === 'DELETE') {
       rec.replace({});
       return { status: 200, body: { deleted: true } };
+    }
+    return null;
+  }
+
+  // ---- ADR-0002: partitioned data stores -----------------------------------
+
+  /** Stable key for a resolved param-set (order-independent). */
+  function partitionKey(params: Record<string, string>): string {
+    return Object.keys(params).sort().map((k) => `${k}=${params[k]}`).join('&');
+  }
+
+  /** Param names declared in a `:name` URL pattern. */
+  function paramNames(pattern: string): string[] {
+    return (pattern.match(/:([A-Za-z0-9_]+)/g) || []).map((s) => s.slice(1));
+  }
+
+  function getOrCreatePartition(ep: InternalEndpoint, key: string): DataPartition {
+    let part = ep.partitions!.get(key);
+    if (!part) {
+      part = { listHandle: null, recordHandle: null, hydrated: false, hydrating: null };
+      ep.partitions!.set(key, part);
+    }
+    return part;
+  }
+
+  /** Build a partition's handle from a seed value, choosing list vs record by shape. */
+  function fillPartition(ep: InternalEndpoint, part: DataPartition, value: unknown): void {
+    if (Array.isArray(value)) {
+      part.listHandle = createListHandle(value as Record<string, unknown>[], { idKey: ep.idKey });
+    } else if (value && typeof value === 'object') {
+      part.recordHandle = createRecordHandle(value as object);
+    } else {
+      // primitive seed — wrap as a record so there is always a handle
+      part.recordHandle = createRecordHandle({ value } as object);
+    }
+  }
+
+  /** Ensure a partition is seeded (loader once, or a fresh clone of the static seed). */
+  async function ensurePartitionSeeded(
+    ep: InternalEndpoint,
+    part: DataPartition,
+    fakeReq: MockrRequest,
+    ctx: HandlerContext,
+    isRead: boolean,
+  ): Promise<void> {
+    if (part.hydrated) return;
+    if (ep.load) {
+      // Loader runs on first access of any kind (read or write) — seed then apply.
+      if (!part.hydrating) {
+        const load = ep.load;
+        part.hydrating = (async () => {
+          const loaded = await load(fakeReq, ctx);
+          fillPartition(ep, part, loaded);
+          part.hydrated = true;
+        })().finally(() => { part.hydrating = null; });
+      }
+      await part.hydrating;
+      return;
+    }
+    // Static seed: each partition gets its own deep clone.
+    fillPartition(ep, part, structuredClone(ep.seed));
+    part.hydrated = true;
+    void isRead;
+  }
+
+  /** CRUD against a single partition's handle. `itemId` set ⇒ item op; else collection op. */
+  function crudOnPartition(
+    part: DataPartition,
+    ep: InternalEndpoint,
+    method: string,
+    itemId: string | null,
+    body: unknown,
+  ): HandlerResult | null {
+    const list = part.listHandle;
+    const rec = part.recordHandle;
+    if (list) {
+      if (method === 'GET' && itemId === null) return { status: 200, body: list.data };
+      if (method === 'GET' && itemId !== null) {
+        const item = list.findById(itemId);
+        return item ? { status: 200, body: item } : { status: 404, body: { error: 'Not found' } };
+      }
+      if (method === 'POST' && itemId === null) {
+        const item = (body || {}) as Record<string, unknown>;
+        if (!(ep.idKey in item) || item[ep.idKey] == null) item[ep.idKey] = list.nextId();
+        return { status: 201, body: list.insert(item) };
+      }
+      if ((method === 'PUT' || method === 'PATCH') && itemId !== null) {
+        if (!list.findById(itemId)) return { status: 404, body: { error: 'Not found' } };
+        return { status: 200, body: list.update(itemId, (body || {}) as Record<string, unknown>) };
+      }
+      if (method === 'DELETE' && itemId !== null) {
+        return list.remove(itemId) ? { status: 200, body: { deleted: true } } : { status: 404, body: { error: 'Not found' } };
+      }
+      return null;
+    }
+    if (rec) {
+      if (itemId !== null) return null; // record endpoints have no item sub-paths
+      if (method === 'GET') return { status: 200, body: rec.data };
+      if (method === 'PATCH' && body && typeof body === 'object') { rec.set(body as Partial<object>); return { status: 200, body: rec.data }; }
+      if (method === 'PUT' && body && typeof body === 'object') { rec.replace(body as object); return { status: 200, body: rec.data }; }
+      if (method === 'DELETE') { rec.replace({}); return { status: 200, body: { deleted: true } }; }
     }
     return null;
   }
@@ -751,7 +923,8 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     const errCtx: RequestErrorContext = { method, path, fullUrl, lastForward: null };
     requestErrorContext.set(req, errCtx);
     const ctx: HandlerContext = {
-      endpoint: handlerContextEndpoint,
+      endpoint: ((url: string) =>
+        resolveEndpointHandle(url, fakeReq.params as Record<string, string>, ctx)) as HandlerContext['endpoint'],
       forward: (async (patch?: import('./types.js').ForwardPatch) => {
         if (!proxyTarget) {
           throw new Error('ctx.forward() requires proxy.target in mockr config');
@@ -941,6 +1114,32 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
             source = 'mock';
             break;
           }
+        }
+        // ADR-0002: partitioned data endpoint — match via matcher, route to the
+        // store partition for the resolved param-set.
+        if (ep.partitions) {
+          let params: Record<string, string> | null = null;
+          let itemId: string | null = null;
+          const coll = ep.matcher(path);
+          if (coll) {
+            params = coll.params as Record<string, string>;
+          } else if (ep.itemMatcher) {
+            const im = ep.itemMatcher(path);
+            if (im) {
+              const p = { ...(im.params as Record<string, string>) };
+              itemId = p.__item ?? null;
+              delete p.__item;
+              params = p;
+            }
+          }
+          if (!params) continue;
+          if (ep.method && ep.method.toUpperCase() !== method) continue;
+          fakeReq.params = params;
+          const part = getOrCreatePartition(ep, partitionKey(params));
+          await ensurePartitionSeeded(ep, part, fakeReq, ctx, method === 'GET' || method === 'HEAD');
+          handlerResult = crudOnPartition(part, ep, method, itemId, body);
+          if (handlerResult) { source = 'mock'; break; }
+          continue;
         }
         const epUrl = typeof ep.url === 'string' ? ep.url : null;
         if (epUrl) {

@@ -61,15 +61,34 @@ export interface InternalEndpoint {
   /** WebSocket runtime when the endpoint was declared with `ws: ws({...})`. */
   wsRuntime?: WsRuntime;
   /**
-   * Hydrate loader (from `hydrate(loader)`). Runs once on first access to fill
-   * the store, then the store is owned (CRUD mutations stick). `null` for a
-   * static `data` store.
+   * Loader (from `.data(url, fn)`). Runs once on first access to fill the store,
+   * then the store is owned (CRUD mutations stick). `null` for a static `data`
+   * store. For a partitioned endpoint the loader runs once **per partition**.
    */
   load?: ((req: MockrRequest, ctx: HandlerContext<any>) => unknown | Promise<unknown>) | null;
-  /** True once the hydrate loader has filled the store (or any write occurred). */
+  /** True once the loader has filled the store (or any write occurred). */
   hydrated?: boolean;
-  /** In-flight hydrate promise — concurrent first reads share it (loader runs once). */
+  /** In-flight load promise — concurrent first reads share it (loader runs once). */
   hydrating?: Promise<void> | null;
+  /**
+   * Per-resolved-param-set store partitions (ADR-0002). Present only on data
+   * endpoints whose URL has path params (`/projects/:projectId/companies/`):
+   * each distinct param-set gets its own owned store. Paramless data endpoints
+   * keep the single `listHandle`/`recordHandle` path and leave this undefined.
+   */
+  partitions?: Map<string, DataPartition>;
+  /** Matches `<pattern>/:__item` — used to route item ops on a partitioned collection. */
+  itemMatcher?: MatchFn;
+  /** Seed template for partitioned data — cloned per new partition (static seed). */
+  seed?: unknown;
+}
+
+/** One owned store for a single resolved param-set of a partitioned data endpoint. */
+export interface DataPartition {
+  listHandle: ListHandle<Record<string, unknown>> | null;
+  recordHandle: RecordHandle<object> | null;
+  hydrated: boolean;
+  hydrating: Promise<void> | null;
 }
 
 interface ControlRoutesConfig {

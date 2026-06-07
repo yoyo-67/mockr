@@ -1,5 +1,4 @@
 import { HANDLER_SPEC_BRAND, type HandlerSpec } from './handler.js';
-import { isHydrate, type HydrateLoader, type HydrateFn } from './hydrate.js';
 import type {
   EndpointDef,
   EndpointDelay,
@@ -110,9 +109,19 @@ interface VerbEntry {
 interface UrlEntry {
   url: string;
   data?: unknown;
-  load?: HydrateFn<unknown>;
+  load?: (req: MockrRequest, ctx: HandlerContext<any>) => unknown | Promise<unknown>;
   verbs: VerbEntry[];
 }
+
+/**
+ * Loader for `.data(url, fn)`: computes the store's value once on first access,
+ * after which the store is owned (CRUD sticks). Gets the full `ctx` (incl.
+ * `ctx.forward()`), so it can seed from upstream, a file, or inline.
+ */
+export type DataLoader<TEndpoints, U extends keyof TEndpoints> = (
+  req: MockrRequest<{ params: PathParams<U & string> }>,
+  ctx: HandlerContext<TEndpoints, U>,
+) => GroupBody<TEndpoints, U> | Promise<GroupBody<TEndpoints, U>>;
 
 /**
  * Coerce a handler's return into a `HandlerResult`. A value carrying a `body`
@@ -217,12 +226,15 @@ export interface MockGroup<TEndpoints, P extends string = ''> {
   delete: VerbMethod<TEndpoints, P, MockGroup<TEndpoints, P>>;
   /**
    * Register an in-memory store with default CRUD, seeded and typed by the map.
-   * Pass a `hydrate(loader)` instead of a static seed to fill the store once
-   * from the loader on first access, then own it (CRUD mutations stick).
+   * Pass a **function** instead of a static seed to compute the value once on
+   * first access (e.g. from `ctx.forward()`), then own it (CRUD sticks). A URL
+   * with path params keeps one store per resolved param-set.
    */
   data<S extends SubUrl<TEndpoints, P> & string>(
     url: S,
-    seed: TEndpoints[FullKey<TEndpoints, P, S>] | HydrateLoader<TEndpoints[FullKey<TEndpoints, P, S>]>,
+    seed:
+      | TEndpoints[FullKey<TEndpoints, P, S>]
+      | DataLoader<TEndpoints, FullKey<TEndpoints, P, S>>,
   ): MockGroup<TEndpoints, P>;
   /** Scope every later registration under an additional URL prefix. */
   prefix<P2 extends string>(prefix: P2): MockGroup<TEndpoints, `${P}${P2}`>;
@@ -294,11 +306,10 @@ export function mockGroup<TEndpoints = Record<string, unknown>>(): MockGroup<TEn
       if (entry.data !== undefined) {
         throw new Error(`mockGroup: duplicate data store ${fullUrl}`);
       }
-      if (isHydrate(seed)) {
-        // Hydrate loader: store stays an empty list until the loader fills it
-        // on first access (kind defaults to list). `load` carries the loader.
+      if (typeof seed === 'function') {
+        // Loader function — run once on first access (per partition), then owned.
         entry.data = [];
-        entry.load = seed.loader;
+        entry.load = seed as UrlEntry['load'];
       } else {
         entry.data = seed;
       }

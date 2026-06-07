@@ -99,6 +99,7 @@ interface EndpointDef<E, U extends keyof E = keyof E> {
   ws?: WsSpec;                   // WebSocket endpoint
   methods?: Record<HttpMethod, VerbSpec>;     // multi-verb (builder output)
   // optional:
+  load?: (req, ctx) => E[U] | Promise<E[U]>;  // run-once loader (see below)
   method?: HttpMethod;
   enabled?: boolean;
   idKey?: string;                // override `'id'` for list endpoints
@@ -106,3 +107,9 @@ interface EndpointDef<E, U extends keyof E = keyof E> {
 ```
 
 Most defs come from `mockGroup().done()`. Reach for a hand-written def only for file-backed stores (`dataFile: file<T>('./x.json')`, hot-reloaded on change) or WebSockets (`ws({...})`); both go straight into `endpoints: [...]` alongside any `groups`.
+
+### Loaders & partitioned stores
+
+`.data(url, fn)` (or a hand-written `load`) makes the store **computed once** on first access from a function — typically `ctx.forward()` to seed from the real backend — after which it's owned and CRUD mutations stick. See [builder → Loaders & partitions](/reference/builder#loaders-partitions).
+
+A `data` URL **with path params** keeps **one owned store per resolved param-set** (`/projects/:projectId/companies/` → an independent store per `projectId`; static seeds and loaders alike). Inside a handler, `ctx.endpoint('/projects/:projectId/companies/')` resolves the **current request's** partition, so a write at a different URL carrying the same `:projectId` grows the right project's store. `server.endpoint(url).reset()` re-arms every partition; data access outside a request (no params to resolve) throws.
