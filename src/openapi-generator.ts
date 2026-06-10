@@ -1,4 +1,5 @@
 import type { InternalEndpoint } from './control-routes.js';
+import type { ParseableSchema } from './types.js';
 import { LIST_CRUD, RECORD_CRUD, type CrudOp } from './crud-matrix.js';
 
 /**
@@ -15,6 +16,8 @@ interface GenerateOptions {
 }
 
 type JsonObject = Record<string, unknown>;
+
+const BODY_VERBS = new Set(['POST', 'PUT', 'PATCH']);
 
 /** `:name` path segments → OpenAPI `{name}`. */
 function toOpenApiPath(url: string): string {
@@ -34,18 +37,65 @@ function pathParameters(url: string): JsonObject[] {
   return pathParamNames(url).map(paramObject);
 }
 
+/**
+ * Duck-typed JSON-Schema conversion: zod 4 schemas expose `.toJSONSchema()`.
+ * Anything without it (zod 3, non-zod validators) yields `null` → generic body.
+ */
+function jsonSchemaOf(schema: ParseableSchema | undefined): JsonObject | null {
+  const maybe = schema as unknown as { toJSONSchema?: (opts?: unknown) => JsonObject } | undefined;
+  if (!maybe || typeof maybe.toJSONSchema !== 'function') return null;
+  try {
+    // `unrepresentable: 'any'` keeps representable fields and degrades the rest
+    // (transforms, coerce, custom refinements) to `{}` instead of throwing.
+    const js = maybe.toJSONSchema({ unrepresentable: 'any' });
+    delete (js as { $schema?: unknown }).$schema;
+    return js;
+  } catch {
+    // Some schema shapes still can't convert — fall back to a generic body.
+    return null;
+  }
+}
+
+/** Best-effort query parameters from a query schema's top-level properties. */
+function queryParameters(querySchema: ParseableSchema | undefined): JsonObject[] {
+  const js = jsonSchemaOf(querySchema);
+  const props = js?.properties as Record<string, JsonObject> | undefined;
+  if (!props) return [];
+  const required = new Set((js?.required as string[] | undefined) ?? []);
+  return Object.entries(props).map(([name, schema]) => ({
+    name,
+    in: 'query',
+    required: required.has(name),
+    schema,
+  }));
+}
+
+/** Whether a loader endpoint has run (real shape known); the builder seeds a
+ *  meaningless `data: []` placeholder, so an unhydrated loader's shape is
+ *  genuinely unknown. */
+function loaderHydrated(ep: InternalEndpoint): boolean {
+  if (ep.hydrated) return true;
+  if (ep.partitions) {
+    for (const part of ep.partitions.values()) if (part.hydrated) return true;
+  }
+  return false;
+}
+
 /** Shape of a `data` endpoint, or `unknown` for an un-accessed loader store. */
 function dataShape(ep: InternalEndpoint, recordHandles?: ReadonlyMap<InternalEndpoint, unknown>): 'list' | 'record' | 'unknown' {
-  if (ep.listHandle) return 'list';
-  if (recordHandles?.has(ep)) return 'record';
-  if (Array.isArray(ep.seed)) return 'list';
-  if (ep.seed && typeof ep.seed === 'object') return 'record';
+  // A loader determines the real shape only once it runs — ignore the `data: []`
+  // placeholder the builder leaves behind on `listHandle`/`seed`.
+  if (ep.load && !loaderHydrated(ep)) return 'unknown';
   if (ep.partitions) {
     for (const part of ep.partitions.values()) {
       if (part.listHandle) return 'list';
       if (part.recordHandle) return 'record';
     }
   }
+  if (ep.listHandle) return 'list';
+  if (recordHandles?.has(ep)) return 'record';
+  if (Array.isArray(ep.seed)) return 'list';
+  if (ep.seed && typeof ep.seed === 'object') return 'record';
   if (Array.isArray(ep.staticBody)) return 'list';
   if (ep.staticBody && typeof ep.staticBody === 'object') return 'record';
   return 'unknown';
@@ -59,20 +109,40 @@ function declaredVerbs(ep: InternalEndpoint): string[] {
   return [];
 }
 
+/** Schemas (body/query) declared for a given verb on an endpoint. */
+function schemasFor(ep: InternalEndpoint, verb: string): { body?: ParseableSchema; query?: ParseableSchema } {
+  if (ep.methods) {
+    const spec = ep.methods[verb] as { body?: ParseableSchema; query?: ParseableSchema } | undefined;
+    return { body: spec?.body, query: spec?.query };
+  }
+  if (ep.isHandler && ep.method?.toUpperCase() === verb) {
+    return { body: ep.schemas?.body, query: ep.schemas?.query };
+  }
+  return {};
+}
+
 export function generateOpenApi(endpoints: InternalEndpoint[], opts: GenerateOptions): JsonObject {
   const paths: Record<string, JsonObject> = {};
 
-  const setOp = (oaPath: string, verb: string, params: JsonObject[]): void => {
-    const operation: JsonObject = { responses: { '200': { description: 'OK' } } };
-    if (params.length) operation.parameters = params;
+  const setOp = (oaPath: string, verb: string, params: JsonObject[], schemas: { body?: ParseableSchema; query?: ParseableSchema }): void => {
+    const operation: JsonObject = {};
+    const allParams = [...params, ...queryParameters(schemas.query)];
+    if (allParams.length) operation.parameters = allParams;
+    if (BODY_VERBS.has(verb)) {
+      const schema = jsonSchemaOf(schemas.body) ?? { type: 'object' };
+      operation.requestBody = { content: { 'application/json': { schema } } };
+    }
+    operation.responses = { '200': { description: 'OK' } };
     paths[oaPath] ??= {};
     paths[oaPath][verb.toLowerCase()] = operation;
   };
 
   for (const ep of endpoints) {
+    if (ep.disabled) continue; // disabled endpoints fall through to proxy — not served by mockr
     if (ep.wsRuntime) continue;
-    if (typeof ep.url !== 'string') continue; // RegExp / wildcard urls can't be expressed
+    if (typeof ep.url !== 'string') continue; // RegExp urls can't be expressed as a path
     if (ep.url.startsWith('/__mockr/')) continue;
+    if (ep.url.includes('*')) continue; // wildcard urls can't be expressed as a path
 
     const oaPath = toOpenApiPath(ep.url);
     const params = pathParameters(ep.url);
@@ -82,20 +152,21 @@ export function generateOpenApi(endpoints: InternalEndpoint[], opts: GenerateOpt
       if (shape === 'unknown') {
         // Un-accessed loader store — list-vs-record not yet knowable. Emit only
         // the safe base GET rather than a misleading synthesized item path.
-        setOp(oaPath, 'GET', params);
+        setOp(oaPath, 'GET', params, {});
         continue;
       }
       const matrix: readonly CrudOp[] = shape === 'list' ? LIST_CRUD : RECORD_CRUD;
       const itemPath = oaPath.replace(/\/$/, '') + '/{id}';
       const itemParams = [...params, paramObject('id')];
       for (const op of matrix) {
-        if (op.scope === 'item') setOp(itemPath, op.verb, itemParams);
-        else setOp(oaPath, op.verb, params);
+        // default CRUD doesn't validate bodies — mutation verbs get a generic body
+        if (op.scope === 'item') setOp(itemPath, op.verb, itemParams, {});
+        else setOp(oaPath, op.verb, params, {});
       }
       continue;
     }
 
-    for (const verb of declaredVerbs(ep)) setOp(oaPath, verb, params);
+    for (const verb of declaredVerbs(ep)) setOp(oaPath, verb, params, schemasFor(ep, verb));
   }
 
   return {

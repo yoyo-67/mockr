@@ -82,6 +82,20 @@ describe('GET /__mockr/openapi.json', () => {
     expect(schema.required.sort()).toEqual(['count', 'name']);
   });
 
+  it('does not throw when a body schema contains an unrepresentable transform', async () => {
+    const defs = mockGroup<{ '/api/coerce': { id: string } }>()
+      .post('/api/coerce', {
+        body: z.object({ name: z.string(), raw: z.string().transform((s) => s.trim()) }),
+        fn: () => ({ body: { id: '1' } }),
+      })
+      .done();
+    const { doc } = await getDoc(defs);
+
+    const op = doc.paths['/api/coerce'].post;
+    expect(op).toBeDefined();
+    expect(op.requestBody.content['application/json'].schema.type).toBe('object');
+  });
+
   it('emits only the base GET for an un-accessed loader data endpoint (shape unknown)', async () => {
     const defs = mockGroup<{ '/api/lazy': { id: string }[] }>()
       .data('/api/lazy', () => [{ id: '1' }])
