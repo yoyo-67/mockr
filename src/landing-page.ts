@@ -15,6 +15,7 @@ interface RouteRow {
 
 const CONTROL_APIS: Array<{ path: string; desc: string }> = [
   { path: '/__mockr/openapi.json', desc: 'OpenAPI 3.1 export (import into Postman/Insomnia/Bruno)' },
+  { path: '/__mockr/swagger', desc: 'Swagger UI — interactive API docs for the served surface' },
   { path: '/__mockr/endpoints', desc: 'Registered endpoints as JSON' },
   { path: '/__mockr/target', desc: 'Current proxy target' },
   { path: '/__mockr/sessions', desc: 'Recorded sessions' },
