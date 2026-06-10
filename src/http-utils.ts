@@ -1,4 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
 
 export function parseQuery(url: string): Record<string, string | string[]> {
   const idx = url.indexOf('?');
@@ -74,6 +76,149 @@ export function sendRaw(res: ServerResponse, status: number, body: string | Buff
   res.setHeader('Content-Length', Buffer.byteLength(body));
   res.writeHead(status);
   res.end(body);
+}
+
+/** Minimal extension → Content-Type map. Unknown → application/octet-stream. */
+const MIME_BY_EXT: Record<string, string> = {
+  json: 'application/json',
+  html: 'text/html',
+  htm: 'text/html',
+  txt: 'text/plain',
+  css: 'text/css',
+  js: 'text/javascript',
+  mjs: 'text/javascript',
+  wasm: 'application/wasm',
+  pdf: 'application/pdf',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  svg: 'image/svg+xml',
+  webp: 'image/webp',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+};
+
+function contentTypeFromPath(path: string): string {
+  const dot = path.lastIndexOf('.');
+  const ext = dot === -1 ? '' : path.slice(dot + 1).toLowerCase();
+  return MIME_BY_EXT[ext] ?? 'application/octet-stream';
+}
+
+/**
+ * Parse a single-range `Range` header against a known file `size`.
+ * Returns `null` for an absent/malformed/multi-range header (caller serves the
+ * full body), `{ unsatisfiable: true }` when the range can't be satisfied
+ * (caller emits 416), or `{ start, end }` (inclusive) for a 206. Supports the
+ * three single-range syntaxes: `bytes=s-e`, `bytes=s-`, `bytes=-n`.
+ */
+export function parseRange(
+  header: string | undefined,
+  size: number,
+): { start: number; end: number } | { unsatisfiable: true } | null {
+  if (!header) return null;
+  const m = /^bytes=(.*)$/.exec(header.trim());
+  if (!m) return null;
+  const spec = m[1];
+  if (spec.includes(',')) return null; // multi-range: serve full body
+  const dash = spec.indexOf('-');
+  if (dash === -1) return null;
+  const startStr = spec.slice(0, dash).trim();
+  const endStr = spec.slice(dash + 1).trim();
+
+  if (startStr === '') {
+    // Suffix: last N bytes.
+    if (endStr === '') return null;
+    const n = Number(endStr);
+    if (!Number.isInteger(n) || n < 0) return null;
+    if (n === 0) return { unsatisfiable: true };
+    if (size === 0) return { unsatisfiable: true };
+    const start = n >= size ? 0 : size - n;
+    return { start, end: size - 1 };
+  }
+
+  const start = Number(startStr);
+  if (!Number.isInteger(start) || start < 0) return null;
+  if (start >= size) return { unsatisfiable: true };
+
+  let end = endStr === '' ? size - 1 : Number(endStr);
+  if (!Number.isInteger(end) || end < start) return null;
+  if (end > size - 1) end = size - 1; // clamp, still 206
+  return { start, end };
+}
+
+/**
+ * Stream a file as the response body. Stats the file for size, sets
+ * `Content-Type` (from extension, default `application/octet-stream`),
+ * advertises `Accept-Ranges`, and honors a single-range `Range` request with
+ * `206 Partial Content` — all without ever buffering the whole body in memory.
+ */
+export async function sendFile(
+  req: IncomingMessage,
+  res: ServerResponse,
+  result: { path: string; status?: number; headers?: Record<string, string | string[]> },
+  status: number,
+) {
+  let info;
+  try {
+    info = await stat(result.path);
+  } catch {
+    info = null;
+  }
+  if (!info || !info.isFile()) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: `File not found: ${result.path}` }));
+    return;
+  }
+
+  if (result.headers) applyHeaders(res, result.headers);
+  if (!res.hasHeader('Content-Type')) res.setHeader('Content-Type', contentTypeFromPath(result.path));
+  res.setHeader('Accept-Ranges', 'bytes');
+
+  // HEAD: headers only — never read the file body (matters for multi-GB files).
+  if (req.method === 'HEAD') {
+    res.setHeader('Content-Length', info.size);
+    res.writeHead(status);
+    res.end();
+    return;
+  }
+
+  const rangeHeader = req.headers.range;
+  const range = parseRange(Array.isArray(rangeHeader) ? rangeHeader[0] : rangeHeader, info.size);
+
+  if (range && 'unsatisfiable' in range) {
+    res.setHeader('Content-Range', `bytes */${info.size}`);
+    res.writeHead(416);
+    res.end();
+    return;
+  }
+
+  if (range) {
+    const chunk = range.end - range.start + 1;
+    res.setHeader('Content-Range', `bytes ${range.start}-${range.end}/${info.size}`);
+    res.setHeader('Content-Length', chunk);
+    res.writeHead(206);
+    streamToResponse(createReadStream(result.path, { start: range.start, end: range.end }), res);
+    return;
+  }
+
+  res.setHeader('Content-Length', info.size);
+  res.writeHead(status);
+  streamToResponse(createReadStream(result.path), res);
+}
+
+/**
+ * Pipe a read stream to the response and tear it down on client abort or
+ * stream error — so a canceled multi-GB download (e.g. a video seek) never
+ * leaks the open file descriptor.
+ */
+function streamToResponse(stream: ReturnType<typeof createReadStream>, res: ServerResponse) {
+  const destroy = () => { if (!stream.destroyed) stream.destroy(); };
+  res.on('close', destroy);
+  stream.on('error', () => { destroy(); res.destroy(); });
+  stream.pipe(res);
 }
 
 const CORS_HEADERS = {

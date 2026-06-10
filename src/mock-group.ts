@@ -2,6 +2,7 @@ import { HANDLER_SPEC_BRAND, type HandlerSpec } from './handler.js';
 import type {
   EndpointDef,
   EndpointDelay,
+  FileResult,
   HandlerContext,
   HandlerResult,
   MockrRequest,
@@ -38,7 +39,9 @@ export type TypedResult<TEndpoints, U extends keyof TEndpoints> =
   // Explicit-status escape: error responses, 204s, and `ctx.error/created/noContent`
   // opt out of body-shape checking (a 404 body isn't the success body).
   | { status: number; body?: unknown; headers?: Record<string, string | string[]> }
-  | { raw: true; body: string | Buffer; status: number; headers: Record<string, string | string[]> };
+  | { raw: true; body: string | Buffer; status: number; headers: Record<string, string | string[]> }
+  // `ctx.file(path)` — stream a file (with Range support) instead of a JSON body.
+  | FileResult;
 
 type ParamsOf<TParams extends ParseableSchema | undefined, U extends string> =
   TParams extends ParseableSchema<infer P extends Record<string, string>> ? P : PathParams<U>;
@@ -129,7 +132,11 @@ export type DataLoader<TEndpoints, U extends keyof TEndpoints> = (
  * response body. Lets handlers `return data` instead of `return { body: data }`.
  */
 function normalizeResult(out: unknown): HandlerResult {
-  if (out !== null && typeof out === 'object' && ('body' in out || (out as { raw?: unknown }).raw === true)) {
+  if (
+    out !== null &&
+    typeof out === 'object' &&
+    ('body' in out || (out as { raw?: unknown }).raw === true || (out as { file?: unknown }).file === true)
+  ) {
     return out as HandlerResult;
   }
   return { body: out };

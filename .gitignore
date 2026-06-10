@@ -6,3 +6,4 @@ sessions
 docs/site/.vitepress/dist
 docs/site/.vitepress/cache
 /.serena
+examples/**/.data

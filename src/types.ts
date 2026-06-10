@@ -23,10 +23,19 @@ export interface MockrRequest<
   body: T extends { body: infer B } ? B : unknown;
 }
 
+/** A streamed-file response: `sendFile` stats `path`, then pipes it (optionally a byte range). */
+export type FileResult = {
+  file: true;
+  path: string;
+  status?: number;
+  headers?: Record<string, string | string[]>;
+};
+
 export type HandlerResult =
   | { body: unknown; status?: number; headers?: Record<string, string | string[]> }
   | { status: number; body: unknown; headers?: Record<string, string | string[]> }
-  | { raw: true; body: string | Buffer; status: number; headers: Record<string, string | string[]> };
+  | { raw: true; body: string | Buffer; status: number; headers: Record<string, string | string[]> }
+  | FileResult;
 
 export interface ForwardPatch {
   path?: string;
@@ -58,6 +67,14 @@ export interface HandlerContext<TEndpoints = Record<string, unknown>, TCurrentUr
   created(body: unknown): ShorthandResult;
   /** Empty-response shorthand: `{ status: 204 }`. */
   noContent(): ShorthandResult;
+  /**
+   * Stream a file as the response body, bypassing the JSON/buffer pipeline.
+   * `sendFile` stats `path` for size, sets `Content-Type` (from extension,
+   * default `application/octet-stream`; `headers` override wins), and pipes
+   * the file — honoring a `Range` request with `206 Partial Content`. Never
+   * buffers the whole body in memory (the multi-GB-file path).
+   */
+  file(path: string, opts?: { status?: number; headers?: Record<string, string | string[]> }): FileResult;
 }
 
 /**
@@ -117,6 +134,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       delay?: EndpointDelay;
       responseSchemas?: Partial<Record<HttpVerb, ParseableSchema>>;
       dataFile?: never;
+      file?: never;
       handler?: never;
       body?: never;
       response?: never;
@@ -130,6 +148,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       methods?: MethodMap<TEndpoints>;
       delay?: EndpointDelay;
       data?: never;
+      file?: never;
       handler?: never;
       body?: never;
       response?: never;
@@ -150,6 +169,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       responseSchemas?: Partial<Record<HttpVerb, ParseableSchema>>;
       data?: never;
       dataFile?: never;
+      file?: never;
       body?: never;
       response?: never;
       methods?: never;
@@ -163,6 +183,7 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       method?: never;
       data?: never;
       dataFile?: never;
+      file?: never;
       handler?: never;
       body?: never;
       response?: never;
@@ -176,11 +197,31 @@ export type EndpointDef<TEndpoints = Record<string, unknown>> =
       method?: never;
       data?: never;
       dataFile?: never;
+      file?: never;
       handler?: never;
       methods?: never;
       body?: never;
       response?: never;
       idKey?: never;
+    }
+  | {
+      /**
+       * Static file-serve form — always streams `file` (with Range support) at
+       * `url`. For a per-request choice of file, use a `handler` + `ctx.file()`.
+       */
+      url: string | RegExp;
+      method?: string;
+      file: string;
+      delay?: EndpointDelay;
+      data?: never;
+      dataFile?: never;
+      handler?: never;
+      methods?: never;
+      body?: never;
+      response?: never;
+      idKey?: never;
+      ws?: never;
+      responseSchemas?: never;
     };
 
 /**

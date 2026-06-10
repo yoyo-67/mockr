@@ -9,6 +9,7 @@ const KNOWN_KEYS = new Set([
   'data',
   'load',
   'dataFile',
+  'file',
   'handler',
   'methods',
   'idKey',
@@ -147,10 +148,17 @@ export function validateConfig(config: MockrConfig<any>): ValidationResult {
     const hasMethods = 'methods' in def && def.methods !== undefined;
     const hasMethod = 'method' in def && def.method !== undefined;
     const hasWs = 'ws' in def && (def as { ws?: unknown }).ws !== undefined;
+    const hasFileServe = 'file' in def && (def as { file?: unknown }).file !== undefined;
 
     if (hasData && hasHandler) push("cannot set both 'data' and 'handler'");
     if (hasData && hasFile) push("cannot set both 'data' and 'dataFile'");
     if (hasFile && hasHandler) push("cannot set both 'dataFile' and 'handler'");
+    if (hasFileServe && (hasData || hasFile || hasHandler || hasMethods || hasWs)) {
+      push("cannot set 'file' together with data/dataFile/handler/methods/ws");
+    }
+    if (hasFileServe && typeof (def as { file?: unknown }).file !== 'string') {
+      push("'file' must be a string path");
+    }
     if (hasHandler && hasMethods)
       push("cannot set both 'handler' and 'methods' (use methods alone)");
     if (hasMethod && hasMethods)

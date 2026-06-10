@@ -1,0 +1,46 @@
+# Forge file-stream — stream a binary .fl with Range support.
+#
+# 1. Start the server first:
+#      npx tsx examples/12-forge-file-stream/server.ts
+# 2. Send a request below:
+#      - VS Code: install the "REST Client" extension, click "Send Request".
+#      - JetBrains: open this file, click the ▶ gutter icon.
+#
+# The body is 4 MB of binary, so what you want to SEE is the response line +
+# headers (status 200 vs 206, Content-Range, Content-Length, Accept-Ranges).
+# In a terminal, `curl -i` (below each request) prints exactly that.
+
+@host = http://localhost:3012
+@urn  = dXJuOmFkc2sub2JqZWN0czpvcy5vYmplY3Q6Zm9vL2Jhci5ydnQ
+@path = /forge-lean/file/{{urn}}/level-0/fragments_extra.fl
+
+### 1) Full GET — the request the Forge OTG loader actually sends.
+# Expect: 200, Content-Type: application/octet-stream, Content-Length: 4194304,
+#         Accept-Ranges: bytes. Body streamed (never buffered whole).
+# curl -i "http://localhost:3012/forge-lean/file/URN/level-0/fragments_extra.fl" -o /dev/null -D -
+GET {{host}}{{path}}
+Accept: */*
+Sec-Fetch-Dest: empty
+
+### 2) Range probe — leading chunk (progressive loader).
+# Expect: 206 Partial Content, Content-Range: bytes 0-65535/4194304, Content-Length: 65536.
+# curl -i -H "Range: bytes=0-65535" "http://localhost:3012/forge-lean/file/URN/level-0/fragments_extra.fl" -o /dev/null -D -
+GET {{host}}{{path}}
+Accept: */*
+Range: bytes=0-65535
+
+### 3) Tail range — trailing footer/index.
+# Expect: 206, Content-Range: bytes 4190208-4194303/4194304.
+# curl -i -H "Range: bytes=-4096" "http://localhost:3012/forge-lean/file/URN/level-0/fragments_extra.fl" -o /dev/null -D -
+GET {{host}}{{path}}
+Range: bytes=-4096
+
+### 4) Out-of-range seek.
+# Expect: 416 Range Not Satisfiable, Content-Range: bytes */4194304.
+# curl -i -H "Range: bytes=999999999-" "http://localhost:3012/forge-lean/file/URN/level-0/fragments_extra.fl" -o /dev/null -D -
+GET {{host}}{{path}}
+Range: bytes=999999999-
+
+# Note: this dynamic `.get` route answers GET (what Forge sends). HEAD is
+# answered by the static `{ url, file }` form (matches GET+HEAD) — see the
+# README and tests/file-streaming.test.ts.

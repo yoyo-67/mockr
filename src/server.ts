@@ -7,6 +7,7 @@ import type {
   MockrServer,
   MockrRequest,
   HandlerResult,
+  FileResult,
   Middleware,
   HandlerContext,
   ParseableSchema,
@@ -23,7 +24,7 @@ import { isFileRef, getFilePath } from './file.js';
 import { createMatcher } from './router.js';
 import { createRecorder, type Recorder } from './recorder.js';
 import { createMemorySessionStore, type MemorySessionStore } from './memory-session.js';
-import { parseQuery, getPath, readBody, parseBody, sendJson, sendRaw } from './http-utils.js';
+import { parseQuery, getPath, readBody, parseBody, sendJson, sendRaw, sendFile } from './http-utils.js';
 import { handleControlRoute, type InternalEndpoint, type DataPartition } from './control-routes.js';
 import { validateConfig, formatErrors, checkDelayValue } from './config-validator.js';
 import { createDataFileWatcher } from './data-file-watcher.js';
@@ -390,6 +391,32 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
         methodsEp.baselineDelay = def.delay;
       }
       endpoints.push(methodsEp);
+    } else if ('file' in def && (def as { file?: unknown }).file !== undefined) {
+      // Static file-serve form: `{ url, file }`. Registered as a handler that
+      // returns a file result, reusing the streaming/Range `sendFile` path.
+      const filePath = resolve((def as { file: string }).file);
+      const fileFn = (() => ({ file: true as const, path: filePath })) as InternalEndpoint['handlerFn'];
+      const fileEp: InternalEndpoint = {
+        url: def.url,
+        method: def.method,
+        matcher,
+        listHandle: null,
+        staticBody: undefined,
+        staticResponse: { status: 200, headers: {}, body: undefined },
+        activeHandler: fileFn,
+        idKey: 'id',
+        isData: false,
+        isHandler: true,
+        isStatic: false,
+        handlerFn: fileFn,
+        schemas: null,
+        disabled: false,
+      };
+      if ('delay' in def && (def as { delay?: EndpointDelay }).delay !== undefined) {
+        fileEp.delay = (def as { delay?: EndpointDelay }).delay;
+        fileEp.baselineDelay = (def as { delay?: EndpointDelay }).delay;
+      }
+      endpoints.push(fileEp);
     }
     // No `body` / `response` shorthand — use `data: T` (record) for static
     // payloads, or `handler` for custom status/headers.
@@ -778,7 +805,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
   }
 
   // Proxy
-  async function handleProxy(method: string, url: string, headers: Record<string, string | string[] | undefined>, body: unknown): Promise<HandlerResult | null> {
+  async function handleProxy(method: string, url: string, headers: Record<string, string | string[] | undefined>, body: unknown): Promise<Exclude<HandlerResult, FileResult> | null> {
     if (!proxyTarget) return null;
     const targetUrl = proxyTarget + url;
     const fetchHeaders: Record<string, string> = {};
@@ -1001,6 +1028,8 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       }),
       created: (body: unknown) => ({ status: 201, body }),
       noContent: () => ({ status: 204, body: undefined }),
+      file: (path: string, opts?: { status?: number; headers?: Record<string, string | string[]> }) =>
+        ({ file: true as const, path, status: opts?.status, headers: opts?.headers }),
     };
 
     // Expose current proxy target so external tooling (dev-server probes,
@@ -1286,7 +1315,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
 
     // Contract-drift verify: check the outgoing body against the endpoint's
     // responseSchema and report mismatches. Skips raw responses.
-    if (config.verify && !('raw' in handlerResult && handlerResult.raw)) {
+    if (config.verify && !('raw' in handlerResult && handlerResult.raw) && !('file' in handlerResult)) {
       for (const chk of verifyChecks) {
         if (chk.method !== method || !chk.matcher(path)) continue;
         const parsed = chk.schema.safeParse(handlerResult.body);
@@ -1311,7 +1340,9 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       handlerResult = { ...handlerResult, headers: { ...existing, 'X-Mockr-Delay': String(appliedDelayMs) } } as HandlerResult;
     }
 
-    if ('raw' in handlerResult && handlerResult.raw) {
+    if ('file' in handlerResult) {
+      await sendFile(req, res, handlerResult, status);
+    } else if ('raw' in handlerResult && handlerResult.raw) {
       sendRaw(res, status, handlerResult.body as string | Buffer, handlerResult.headers);
     } else if (cachedHit && cachedHit.bodyText !== undefined) {
       // Fast path: serve the pre-serialized cached body, no re-stringify.
