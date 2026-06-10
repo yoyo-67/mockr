@@ -122,10 +122,18 @@ function suggest(key: string): string | null {
 export function validateConfig(config: MockrConfig<any>): ValidationResult {
   const errors: ConfigError[] = [];
   const seenKeys = new Set<string>();
-  const defs = config.endpoints ?? [];
+  if (config === null || typeof config !== 'object') {
+    return { valid: false, errors: [{ index: -1, url: '<config>', message: 'config must be an object' }] };
+  }
+  const defs = Array.isArray(config.endpoints) ? config.endpoints : [];
 
   for (let i = 0; i < defs.length; i++) {
-    const def = defs[i] as Record<string, unknown> & EndpointDef;
+    const rawDef = defs[i];
+    if (rawDef === null || typeof rawDef !== 'object') {
+      errors.push({ index: i, url: '<unknown>', message: 'endpoint must be an object' });
+      continue;
+    }
+    const def = rawDef as Record<string, unknown> & EndpointDef;
     const urlStr =
       typeof def.url === 'string' ? def.url : def.url?.toString() ?? '<unknown>';
     const push = (msg: string) =>
