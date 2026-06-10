@@ -22,9 +22,11 @@ export function createMatcher(pattern: string | RegExp): MatchFn {
   // Wildcard patterns: * matches one segment, ** matches everything
   if (pattern.includes('*')) {
     const regexStr = '^' + pattern
-      .replace(/\*\*/g, '§GLOBSTAR§')     // protect ** first
-      .replace(/\*/g, '[^/]+')             // * = one path segment
-      .replace(/§GLOBSTAR§/g, '.*')        // ** = anything
+      .replace(/\*\*/g, '\0GLOBSTAR\0')    // protect ** first
+      .replace(/\*/g, '\0STAR\0')          // protect single *
+      .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // escape literal regex specials
+      .replace(/\0GLOBSTAR\0/g, '.*')      // ** = anything
+      .replace(/\0STAR\0/g, '[^/]+')       // * = one path segment
       + '$';
     const regex = new RegExp(regexStr);
     return (path: string) => {

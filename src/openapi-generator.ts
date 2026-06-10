@@ -19,6 +19,13 @@ type JsonObject = Record<string, unknown>;
 
 const BODY_VERBS = new Set(['POST', 'PUT', 'PATCH']);
 
+const STATUS_DESC: Record<number, string> = {
+  200: 'OK',
+  201: 'Created',
+  204: 'No Content',
+  404: 'Not Found',
+};
+
 /** `:name` path segments → OpenAPI `{name}`. */
 function toOpenApiPath(url: string): string {
   return url.replace(/:([A-Za-z0-9_]+)/g, '{$1}');
@@ -124,7 +131,7 @@ function schemasFor(ep: InternalEndpoint, verb: string): { body?: ParseableSchem
 export function generateOpenApi(endpoints: InternalEndpoint[], opts: GenerateOptions): JsonObject {
   const paths: Record<string, JsonObject> = {};
 
-  const setOp = (oaPath: string, verb: string, params: JsonObject[], schemas: { body?: ParseableSchema; query?: ParseableSchema }): void => {
+  const setOp = (oaPath: string, verb: string, params: JsonObject[], schemas: { body?: ParseableSchema; query?: ParseableSchema }, statuses: number[] = [200]): void => {
     const operation: JsonObject = {};
     const allParams = [...params, ...queryParameters(schemas.query)];
     if (allParams.length) operation.parameters = allParams;
@@ -132,7 +139,9 @@ export function generateOpenApi(endpoints: InternalEndpoint[], opts: GenerateOpt
       const schema = jsonSchemaOf(schemas.body) ?? { type: 'object' };
       operation.requestBody = { content: { 'application/json': { schema } } };
     }
-    operation.responses = { '200': { description: 'OK' } };
+    const responses: JsonObject = {};
+    for (const s of statuses) responses[String(s)] = { description: STATUS_DESC[s] ?? 'Response' };
+    operation.responses = responses;
     paths[oaPath] ??= {};
     paths[oaPath][verb.toLowerCase()] = operation;
   };
@@ -159,9 +168,10 @@ export function generateOpenApi(endpoints: InternalEndpoint[], opts: GenerateOpt
       const itemPath = oaPath.replace(/\/$/, '') + '/{id}';
       const itemParams = [...params, paramObject('id')];
       for (const op of matrix) {
-        // default CRUD doesn't validate bodies — mutation verbs get a generic body
-        if (op.scope === 'item') setOp(itemPath, op.verb, itemParams, {});
-        else setOp(oaPath, op.verb, params, {});
+        // default CRUD doesn't validate bodies — mutation verbs get a generic body.
+        // Item ops address a specific `{id}` that may not exist → also document 404.
+        if (op.scope === 'item') setOp(itemPath, op.verb, itemParams, {}, [op.status, 404]);
+        else setOp(oaPath, op.verb, params, {}, [op.status]);
       }
       continue;
     }

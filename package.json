@@ -24,6 +24,7 @@
     "test:watch": "vitest",
     "test:types": "vitest run --config vitest.typecheck.config.ts",
     "test:perf": "PERF=1 vitest run tests/perf-*.test.ts",
+    "fuzz:openapi": "tsx scripts/fuzz-openapi.ts",
     "docs:dev": "vitepress dev docs/site",
     "docs:build": "vitepress build docs/site",
     "docs:preview": "vitepress preview docs/site",

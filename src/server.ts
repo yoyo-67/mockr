@@ -632,6 +632,16 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     activeScenarioName = name;
   }
 
+  // Coerce an arbitrary parsed body to a plain object for CRUD mutation. A
+  // client can send any JSON value (string/number/array/bool); only a non-array
+  // object is a usable record — anything else becomes an empty object rather
+  // than crashing the `in` operator / spread downstream.
+  function asCrudObject(body: unknown): Record<string, unknown> {
+    return body !== null && typeof body === 'object' && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : {};
+  }
+
   // Data CRUD (list endpoints)
   function handleListCrud(ep: InternalEndpoint, method: string, path: string, body: unknown): HandlerResult | null {
     const list = ep.listHandle;
@@ -647,17 +657,17 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       return item ? { status: 200, body: item } : { status: 404, body: { error: 'Not found' } };
     }
     if (method === 'POST' && isExactMatch) {
-      const item = (body || {}) as Record<string, unknown>;
+      const item = asCrudObject(body);
       if (!(ep.idKey in item) || item[ep.idKey] == null) item[ep.idKey] = list.nextId();
       return { status: 201, body: list.insert(item) };
     }
     if (method === 'PUT' && subPath) {
       if (!list.findById(subPath)) return { status: 404, body: { error: 'Not found' } };
-      return { status: 200, body: list.update(subPath, (body || {}) as Record<string, unknown>) };
+      return { status: 200, body: list.update(subPath, asCrudObject(body)) };
     }
     if (method === 'PATCH' && subPath) {
       if (!list.findById(subPath)) return { status: 404, body: { error: 'Not found' } };
-      return { status: 200, body: list.update(subPath, (body || {}) as Record<string, unknown>) };
+      return { status: 200, body: list.update(subPath, asCrudObject(body)) };
     }
     if (method === 'DELETE' && subPath) {
       return list.remove(subPath) ? { status: 200, body: { deleted: true } } : { status: 404, body: { error: 'Not found' } };

@@ -96,6 +96,19 @@ describe('GET /__mockr/openapi.json', () => {
     expect(op.requestBody.content['application/json'].schema.type).toBe('object');
   });
 
+  it('documents the real CRUD status codes (POST 201, item ops 200+404)', async () => {
+    const defs = mockGroup<{ '/api/todos': { id: string; title: string }[] }>()
+      .data('/api/todos', [{ id: '1', title: 'a' }])
+      .done();
+    const { doc } = await getDoc(defs);
+
+    // Collection POST creates → 201, not 200.
+    expect(Object.keys(doc.paths['/api/todos'].post.responses)).toEqual(['201']);
+    // Item lookups can miss → 404 documented alongside success.
+    expect(Object.keys(doc.paths['/api/todos/{id}'].get.responses).sort()).toEqual(['200', '404']);
+    expect(Object.keys(doc.paths['/api/todos/{id}'].delete.responses).sort()).toEqual(['200', '404']);
+  });
+
   it('emits only the base GET for an un-accessed loader data endpoint (shape unknown)', async () => {
     const defs = mockGroup<{ '/api/lazy': { id: string }[] }>()
       .data('/api/lazy', () => [{ id: '1' }])

@@ -5,6 +5,22 @@ describe('Level 3 — Mutable data', () => {
   let server: Awaited<ReturnType<typeof mockr>>;
   afterEach(async () => { await server?.close(); });
 
+  it('does not 500 when a CRUD body is a non-object JSON value', async () => {
+    server = await mockr({
+      endpoints: [{ url: '/api/items', data: [{ id: 1, name: 'Apple' }] }],
+    });
+
+    // schemathesis-style: a valid JSON body that is a primitive/array, not an object.
+    for (const raw of ['"hello"', '42', 'true', '[1,2,3]']) {
+      const res = await fetch(`${server.url}/api/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: raw,
+      });
+      expect(res.status).toBeLessThan(500);
+    }
+  });
+
   it('auto-generates CRUD endpoints', async () => {
     server = await mockr({
       endpoints: [
