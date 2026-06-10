@@ -13,6 +13,7 @@ import type { WsRuntime } from './ws-runtime.js';
 import { createMatcher } from './router.js';
 import { generateInterface, urlToFileName, urlToTypeName } from './type-generator.js';
 import { generateOpenApi } from './openapi-generator.js';
+import { renderLandingPage } from './landing-page.js';
 import { sendCorsJson, handleCorsOptions } from './http-utils.js';
 import { checkDelayValue } from './config-validator.js';
 import { addEndpointToServerFile, removeEndpointFromServerFile, updateUrlInServerFile, changeToHandlerInServerFile } from './server-file-patcher.js';
@@ -122,7 +123,15 @@ export async function handleControlRoute(
     return false; // handled separately in server.ts
   }
 
-  if (!path.startsWith('/__mockr/')) return false;
+  // Landing page — bare-minimum HTML index of internal APIs + mock routes.
+  if ((path === '/__mockr' || path === '/__mockr/') && method === 'GET') {
+    const html = renderLandingPage(endpoints);
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+    res.end(html);
+    return true;
+  }
+
+  if (path !== '/__mockr' && !path.startsWith('/__mockr/')) return false;
 
   if (method === 'OPTIONS') {
     handleCorsOptions(res);

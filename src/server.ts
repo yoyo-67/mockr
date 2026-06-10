@@ -1020,8 +1020,8 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
       return sendJson(res, 400, { error: 'Unknown scenario' });
     }
 
-    // Control routes (/__mockr/*)
-    if (path.startsWith('/__mockr/')) {
+    // Control routes (/__mockr/*) — also catch the bare /__mockr landing path.
+    if (path === '/__mockr' || path.startsWith('/__mockr/')) {
       const handled = await handleControlRoute(path, method, body, res, {
         recorder, endpoints, mocksDir, serverFile, scenarios: scenarios as Record<string, unknown>, memorySessions, recordHandles,
       });
