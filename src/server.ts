@@ -172,6 +172,7 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
   let proxyEnabled = !!config.proxy;
   let proxyTarget = config.proxy?.target ?? null;
   const proxyTargets = config.proxy?.targets ?? null;
+  const proxyHeaders = config.proxy?.headers ?? null;
   let activeScenarioName: string | null = null;
 
   // Per-endpoint record handles (for `data: T` non-array endpoints).
@@ -832,6 +833,16 @@ export async function mockr<TEndpoints = Record<string, unknown>>(
     const originHost = (typeof xfHost === 'string' && xfHost) || target.host;
     fetchHeaders['origin'] = `${target.protocol}//${originHost}`;
     fetchHeaders['referer'] = `${target.protocol}//${originHost}${url}`;
+    // Standalone-tool escape hatch: inject configured upstream headers
+    // (e.g. an auth Cookie) FILL-IF-ABSENT — only when the request didn't
+    // already carry that header (case-insensitive). The real browser flow
+    // always sends Cookie, so a live session is never clobbered. See CONTEXT.md.
+    if (proxyHeaders) {
+      const present = new Set(Object.keys(fetchHeaders).map((k) => k.toLowerCase()));
+      for (const [k, v] of Object.entries(proxyHeaders)) {
+        if (!present.has(k.toLowerCase())) fetchHeaders[k] = v;
+      }
+    }
     const fetchOpts: RequestInit = { method, headers: fetchHeaders, redirect: 'manual' };
     if (method !== 'GET' && method !== 'HEAD') {
       if (isBuffer) {

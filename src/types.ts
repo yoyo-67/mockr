@@ -229,7 +229,18 @@ export interface MockrConfig<TEndpoints = Record<string, unknown>> {
   middleware?: Middleware[];
   scenarios?: Record<string, (s: ScenarioSetup<TEndpoints>) => void>;
   fixtureFile?: string;
-  proxy?: { target: string; targets?: Record<string, string> };
+  proxy?: {
+    target: string;
+    targets?: Record<string, string>;
+    /**
+     * Headers injected into every upstream request (proxy passthrough and
+     * `ctx.forward()`) — **fill-if-absent**: applied only when the incoming
+     * request lacks that header (case-insensitive), so the browser's real
+     * `Cookie` is never clobbered. The standalone-tool escape hatch: Postman/
+     * curl send no auth, mockr supplies it. See CONTEXT.md.
+     */
+    headers?: Record<string, string>;
+  };
   tui?: boolean;
   recorder?: { sessionsDir?: string; mocksDir?: string; serverFile?: string };
   /**

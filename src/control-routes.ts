@@ -12,6 +12,7 @@ import { createRecordHandle, type RecordHandle } from './record-handle.js';
 import type { WsRuntime } from './ws-runtime.js';
 import { createMatcher } from './router.js';
 import { generateInterface, urlToFileName, urlToTypeName } from './type-generator.js';
+import { generateOpenApi } from './openapi-generator.js';
 import { sendCorsJson, handleCorsOptions } from './http-utils.js';
 import { checkDelayValue } from './config-validator.js';
 import { addEndpointToServerFile, removeEndpointFromServerFile, updateUrlInServerFile, changeToHandlerInServerFile } from './server-file-patcher.js';
@@ -184,6 +185,16 @@ export async function handleControlRoute(
     }
     ep.delay = value as typeof ep.delay;
     sendCorsJson(res, 200, { url: targetUrl, delay: value });
+    return true;
+  }
+
+  // GET /__mockr/openapi.json — read-only OpenAPI 3.1 export of the served
+  // surface (standalone-tool escape hatch). Recorder-independent. Server URL is
+  // derived from the request Host so the doc points back at this mock server.
+  if (path === '/__mockr/openapi.json' && method === 'GET') {
+    const host = res.req?.headers?.host || 'localhost';
+    const doc = generateOpenApi(endpoints, { serverUrl: `http://${host}`, recordHandles });
+    sendCorsJson(res, 200, doc);
     return true;
   }
 
