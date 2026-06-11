@@ -14,6 +14,7 @@ import { createMatcher } from './router.js';
 import { generateInterface, urlToFileName, urlToTypeName } from './type-generator.js';
 import { generateOpenApi } from './openapi-generator.js';
 import { renderLandingPage } from './landing-page.js';
+import { renderSwaggerPage } from './swagger-page.js';
 import { sendCorsJson, handleCorsOptions } from './http-utils.js';
 import { checkDelayValue } from './config-validator.js';
 import { addEndpointToServerFile, removeEndpointFromServerFile, updateUrlInServerFile, changeToHandlerInServerFile } from './server-file-patcher.js';
@@ -126,6 +127,15 @@ export async function handleControlRoute(
   // Landing page — bare-minimum HTML index of internal APIs + mock routes.
   if ((path === '/__mockr' || path === '/__mockr/') && method === 'GET') {
     const html = renderLandingPage(endpoints);
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+    res.end(html);
+    return true;
+  }
+
+  // Swagger UI — HTML shell that loads Swagger UI from a CDN and renders the
+  // live /__mockr/openapi.json export (standalone-tool escape hatch). See CONTEXT.md.
+  if (path === '/__mockr/swagger' && method === 'GET') {
+    const html = renderSwaggerPage();
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
     res.end(html);
     return true;

@@ -42,6 +42,7 @@ describe('GET /__mockr/ landing page', () => {
   it('links to the internal control APIs', async () => {
     const { body } = await landing('/__mockr/');
     expect(body).toContain('href="/__mockr/openapi.json"');
+    expect(body).toContain('href="/__mockr/swagger"');
     expect(body).toContain('href="/__mockr/endpoints"');
   });
 
